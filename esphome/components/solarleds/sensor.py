@@ -1,34 +1,44 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import switch, ble_client, esp32_ble_tracker
+from esphome.components import sensor, ble_client, esp32_ble_tracker
 from esphome.const import (
-    CONF_ICON,
     CONF_ID,
-    CONF_INVERTED,
+    STATE_CLASS_NONE,
     CONF_SERVICE_UUID,
-    ICON_BLUETOOTH,
 )
-from .. import ble_client_ns
+from esphome import automation
+
+from esphome.components.ble_client import ble_client_ns
+
+DEPENDENCIES = ["ble_client"]
 
 CONF_CHARACTERISTIC_UUID = "characteristic_uuid"
-BLEClientSwitch = ble_client_ns.class_(
-    "BLEClientSwitch", switch.Switch, cg.Component, ble_client.BLEClientNode
+CONF_DESCRIPTOR_UUID = "descriptor_uuid"
+
+CONF_NOTIFY = "notify"
+
+Solarleds = ble_client_ns.class_(
+    "Solarleds", sensor.Sensor, cg.PollingComponent, ble_client.BLEClientNode
+)
+BLESensorNotifyTrigger = ble_client_ns.class_(
+    "BLESensorNotifyTrigger", automation.Trigger.template(cg.float_)
 )
 
-CONFIG_SCHEMA = (
-    switch.SWITCH_SCHEMA.extend(
+CONFIG_SCHEMA = cv.All(
+    sensor.sensor_schema(
+        accuracy_decimals=0,
+        state_class=STATE_CLASS_NONE,
+    )
+    .extend(
         {
-            cv.GenerateID(): cv.declare_id(BLEClientSwitch),
+            cv.GenerateID(): cv.declare_id(Solarleds),
             cv.Required(CONF_SERVICE_UUID): esp32_ble_tracker.bt_uuid,
             cv.Required(CONF_CHARACTERISTIC_UUID): esp32_ble_tracker.bt_uuid,
-            cv.Optional(CONF_INVERTED): cv.invalid(
-                "BLE client switches do not support inverted mode!"
-            ),
-            cv.Optional(CONF_ICON, default=ICON_BLUETOOTH): switch.icon,
+            cv.Optional(CONF_NOTIFY, default=False): cv.boolean,
         }
     )
+    .extend(cv.polling_component_schema("60s"))
     .extend(ble_client.BLE_CLIENT_SCHEMA)
-    .extend(cv.COMPONENT_SCHEMA)
 )
 
 
@@ -65,6 +75,8 @@ async def to_code(config):
     ):
         uuid128 = esp32_ble_tracker.as_hex_array(config[CONF_CHARACTERISTIC_UUID])
         cg.add(var.set_char_uuid128(uuid128))
+
     await cg.register_component(var, config)
-    await switch.register_switch(var, config)
     await ble_client.register_ble_node(var, config)
+    cg.add(var.set_enable_notify(config[CONF_NOTIFY]))
+    await sensor.register_sensor(var, config)
