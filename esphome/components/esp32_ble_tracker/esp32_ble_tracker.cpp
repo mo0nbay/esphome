@@ -296,11 +296,13 @@ void ESP32BLETracker::real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_
       } else {
         ESP_LOGW(TAG, "extend adv, adv type 0x%x data len %d, data status: %d", param->ext_adv_report.params.event_type,
                  param->ext_adv_report.params.adv_data_len, param->ext_adv_report.params.data_status);
+        const auto &report = param->ext_adv_report.params;
+        global_esp32_ble_tracker->gap_ext_scan_result_(report);
       }
       // ESP_LOGW(TAG, "[gap_event_handler] EXT ADV!!");
       // ESP_LOGW(TAG, "[gap_event_handler] ESP_GAP_BLE_EXT_ADV_REPORT_EVT");
-      const auto &report = param->ext_adv_report.params;
-      global_esp32_ble_tracker->gap_ext_scan_result_(report);
+      // const auto &report = param->ext_adv_report.params;
+      // global_esp32_ble_tracker->gap_ext_scan_result_(report);
 
       // if (report.event_type & ESP_BLE_GAP_SET_EXT_ADV_PROP_LEGACY) {
       //   // here we can receive regular advertising data from BLE4.x devices
@@ -309,7 +311,15 @@ void ESP32BLETracker::real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_
       //   // here we will get extended advertising data that are advertised over data channel by BLE5 divices
       //   // ESP_LOGW(TAG, "Ext advertise: data_le: %d, data_status: %d \n", report.adv_data_len, report.data_status);
       // }
+      break;
     }
+    // TODO handle scan stop.
+    case ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT: {
+      ESP_LOGW(TAG, "ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT");
+      // xSemaphoreGive(this->scan_end_lock_);
+      break;
+    }
+
     default:
       break;
   }
@@ -331,7 +341,7 @@ void ESP32BLETracker::gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_
 }
 
 // void ESP32BLETracker::gap_scan_result_(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param) {
-//   if (param.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT) {
+// if (param.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT) {
 //     if (xSemaphoreTake(this->scan_result_lock_, 0L)) {
 //       if (this->scan_result_index_ < 16) {
 //         this->scan_result_buffer_[this->scan_result_index_++] = param;
@@ -346,17 +356,17 @@ void ESP32BLETracker::gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_
 void ESP32BLETracker::gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &param) {
   // TODO: double check this evt type. This is what arduino-esp32 uses to signal a scan result:
   // https://github.com/espressif/arduino-esp32/blob/7856de7a57420e494176c16c5138174fe2c1dad0/libraries/BLE/src/BLEScan.cpp#L149
-  if (param.event_type == ESP_GAP_BLE_EXT_ADV_REPORT_EVT) {
-    if (xSemaphoreTake(this->scan_result_lock_, 0L)) {
-      if (this->scan_result_index_ < 16) {
-        this->scan_result_buffer_[this->scan_result_index_++] = param;
-      }
-      xSemaphoreGive(this->scan_result_lock_);
+  // if (param.event_type == ESP_GAP_BLE_EXT_ADV_REPORT_EVT) {
+  if (xSemaphoreTake(this->scan_result_lock_, 0L)) {
+    if (this->scan_result_index_ < 16) {
+      this->scan_result_buffer_[this->scan_result_index_++] = param;
     }
-    // TODO: double check this evt type.
-  } else if (param.event_type == ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT) {
-    xSemaphoreGive(this->scan_end_lock_);
+    xSemaphoreGive(this->scan_result_lock_);
   }
+  // TODO: double check this evt type.
+  // } else if (param.event_type == ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT) {
+  //   xSemaphoreGive(this->scan_end_lock_);
+  // }
 }
 
 void ESP32BLETracker::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
