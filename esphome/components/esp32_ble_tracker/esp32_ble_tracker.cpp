@@ -275,21 +275,29 @@ void ESP32BLETracker::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_ga
 
 void ESP32BLETracker::real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
-    // case ESP_GAP_BLE_SCAN_RESULT_EVT:
-    //   ESP_LOGW(TAG, "[gap_event_handler] LEGACY SCAN HANDLER");
-    // global_esp32_ble_tracker->gap_scan_result_(param->scan_rst);
-    //   break;
-    // case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
-    //   global_esp32_ble_tracker->gap_scan_set_param_complete_(param->scan_param_cmpl);
-    //   break;
-    // case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
-    //   global_esp32_ble_tracker->gap_scan_start_complete_(param->scan_start_cmpl);
-    //   break;
-    // case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
-    //   global_esp32_ble_tracker->gap_scan_stop_complete_(param->scan_stop_cmpl);
-    //   break;
+    case ESP_GAP_BLE_SCAN_RESULT_EVT:
+      ESP_LOGW(TAG, "[gap_event_handler] LEGACY SCAN HANDLER");
+      // global_esp32_ble_tracker->gap_scan_result_(param->scan_rst);
+      break;
+    case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
+      global_esp32_ble_tracker->gap_scan_set_param_complete_(param->scan_param_cmpl);
+      break;
+    case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
+      global_esp32_ble_tracker->gap_scan_start_complete_(param->scan_start_cmpl);
+      break;
+    case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
+      global_esp32_ble_tracker->gap_scan_stop_complete_(param->scan_stop_cmpl);
+      break;
     // Extended.
     case ESP_GAP_BLE_EXT_ADV_REPORT_EVT: {
+      if (param->ext_adv_report.params.event_type & ESP_BLE_GAP_SET_EXT_ADV_PROP_LEGACY) {
+        // ESP_LOGW(TAG, "legacy adv, adv type 0x%x data len %d", param->ext_adv_report.params.event_type,
+        //          param->ext_adv_report.params.adv_data_len);
+      } else {
+        ESP_LOGW(TAG, "extend adv, adv type 0x%x data len %d, data status: %d", param->ext_adv_report.params.event_type,
+                 param->ext_adv_report.params.adv_data_len, param->ext_adv_report.params.data_status);
+      }
+      // ESP_LOGW(TAG, "[gap_event_handler] EXT ADV!!");
       // ESP_LOGW(TAG, "[gap_event_handler] ESP_GAP_BLE_EXT_ADV_REPORT_EVT");
       const auto &report = param->ext_adv_report.params;
       global_esp32_ble_tracker->gap_ext_scan_result_(report);
