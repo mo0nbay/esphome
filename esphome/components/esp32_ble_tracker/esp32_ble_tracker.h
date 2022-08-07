@@ -203,16 +203,10 @@ class ESP32BLETracker : public Component {
   static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
   void real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
   void gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &param);
-  /// Called when a `ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT` event is received.
-  // void gap_scan_set_param_complete_(const esp_ble_gap_cb_param_t::ble_scan_param_cmpl_evt_param &param);
   /// Called when a `ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT` event is received.
   void gap_scan_set_param_complete_(const esp_ble_gap_cb_param_t::ble_set_ext_scan_params_cmpl_param &param);
-  // /// Called when a `ESP_GAP_BLE_SCAN_START_COMPLETE_EVT` event is received.
-  // void gap_scan_start_complete_(const esp_ble_gap_cb_param_t::ble_scan_start_cmpl_evt_param &param);
   /// Called when a `ESP_GAP_BLE_EXT_SCAN_START_COMPLETE_EVT` event is received.
   void gap_scan_start_complete_(const esp_ble_gap_cb_param_t::ble_ext_scan_start_cmpl_param &param);
-  /// Called when a `ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT` event is received.
-  // void gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_scan_stop_cmpl_evt_param &param);
   /// Called when a `ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT` event is received.
   void gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_ext_scan_stop_cmpl_param &param);
 

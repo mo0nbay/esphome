@@ -534,11 +534,17 @@ optional<ESPBLEiBeacon> ESPBLEiBeacon::from_manufacturer_data(const ServiceData 
   return ESPBLEiBeacon(data.data.data());
 }
 
+// TODO: Better alternative to this quick hack. We currently just instantiate a legacy scan result
+// from the extended scan result so everything else keeps working. We need to propagate the new param.
+// IIUC, this shoulld be compatible with the legacy mode and should supported Coded PHY advertisements,
+// but longer advertisement payloads will be truncated with a warning.
 void ESPBTDevice::parse_ext_scan_rst(const esp_ble_gap_ext_adv_reprot_t &param) {
-  // Quick hack.
   esp_ble_gap_cb_param_t::ble_scan_result_evt_param legacy_param{};
-  // TODO: warn if we have to truncate adv_len.
-  legacy_param.adv_data_len = param.adv_data_len;
+  legacy_param.adv_data_len = std::max(static_cast<size_t>(param.adv_data_len), sizeof(legacy_param.ble_adv));
+  if (param.adv_data_len > legacy_param.adv_data_len) {
+    ESP_LOGW(TAG, "Truncating adertisement data. Had % bytesd, now have %d bytes", param.adv_data_len,
+             legacy_param.adv_data_len);
+  }
   memcpy(legacy_param.ble_adv, param.adv_data, legacy_param.adv_data_len);
   // TODO: map values.
   legacy_param.ble_addr_type = BLE_ADDR_TYPE_RANDOM;
