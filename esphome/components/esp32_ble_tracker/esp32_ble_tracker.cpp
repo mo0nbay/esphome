@@ -540,6 +540,7 @@ optional<ESPBLEiBeacon> ESPBLEiBeacon::from_manufacturer_data(const ServiceData 
 // but longer advertisement payloads will be truncated with a warning.
 void ESPBTDevice::parse_ext_scan_rst(const esp_ble_gap_ext_adv_reprot_t &param) {
   esp_ble_gap_cb_param_t::ble_scan_result_evt_param legacy_param{};
+  legacy_param.rssi = param.rssi;
   legacy_param.adv_data_len = std::max(static_cast<size_t>(param.adv_data_len), sizeof(legacy_param.ble_adv));
   if (param.adv_data_len > legacy_param.adv_data_len) {
     ESP_LOGW(TAG, "Truncating adertisement data. Had % bytesd, now have %d bytes", param.adv_data_len,
