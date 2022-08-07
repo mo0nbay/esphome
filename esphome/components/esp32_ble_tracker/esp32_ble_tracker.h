@@ -75,8 +75,10 @@ class ESPBLEiBeacon {
 
 class ESPBTDevice {
  public:
-  void parse_scan_rst(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param);
+#ifdef USE_BT5_FEATURES
   void parse_ext_scan_rst(const esp_ble_gap_ext_adv_reprot_t &param);
+#endif  // USE_BT5_FEATURES
+  void parse_scan_rst(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param);
 
   std::string address_str() const;
 
@@ -197,9 +199,12 @@ class ESP32BLETracker : public Component {
   /// Callback that will handle all GAP events and redistribute them to other callbacks.
   static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
   void real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
-  /// Called when a `ESP_GAP_BLE_SCAN_RESULT_EVT` event is received.
-  // void gap_scan_result_(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param);
+#ifdef USE_BT5_FEATURES
   void gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &param);
+#else
+  /// Called when a `ESP_GAP_BLE_SCAN_RESULT_EVT` event is received.
+  void gap_scan_result_(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param);
+#endif  // USE_BT5_FEATUREES
   /// Called when a `ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT` event is received.
   void gap_scan_set_param_complete_(const esp_ble_gap_cb_param_t::ble_scan_param_cmpl_evt_param &param);
   /// Called when a `ESP_GAP_BLE_SCAN_START_COMPLETE_EVT` event is received.
@@ -217,9 +222,12 @@ class ESP32BLETracker : public Component {
   std::vector<ESPBTDeviceListener *> listeners_;
   /// Client parameters.
   std::vector<ESPBTClient *> clients_;
-  /// A structure holding the ESP BLE scan parameters.
-  // esp_ble_scan_params_t scan_params_;
+#ifdef USE_BT5_FEATURES
   esp_ble_ext_scan_params_t ext_scan_params_;
+#else
+  /// A structure holding the ESP BLE scan parameters.
+  esp_ble_scan_params_t scan_params_;
+#endif  // USE_BT5_FEATURES
   /// The interval in seconds to perform scans.
   uint32_t scan_duration_;
   uint32_t scan_interval_;
@@ -228,8 +236,11 @@ class ESP32BLETracker : public Component {
   SemaphoreHandle_t scan_result_lock_;
   SemaphoreHandle_t scan_end_lock_;
   size_t scan_result_index_{0};
-  // esp_ble_gap_cb_param_t::ble_scan_result_evt_param scan_result_buffer_[16];
+#ifdef USE_BT5_FEATURES
   esp_ble_gap_ext_adv_reprot_t scan_result_buffer_[16];
+#else
+  esp_ble_gap_cb_param_t::ble_scan_result_evt_param scan_result_buffer_[16];
+#endif  // USE_BT5_FEATURES
   esp_bt_status_t scan_start_failed_{ESP_BT_STATUS_SUCCESS};
   esp_bt_status_t scan_set_param_failed_{ESP_BT_STATUS_SUCCESS};
 

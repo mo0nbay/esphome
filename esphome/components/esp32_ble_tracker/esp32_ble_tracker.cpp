@@ -103,7 +103,12 @@ void ESP32BLETracker::loop() {
         if (client->parse_device(device)) {
           found = true;
           if (client->state() == ClientState::DISCOVERED) {
+#ifdef USE_BT5_FEATURES
             esp_ble_gap_stop_ext_scan();
+#else
+            esp_ble_gap_stop_scanning();
+#endif  // USE_BT5_FEATURES
+
 #ifdef USE_ARDUINO
             constexpr TickType_t block_time = 10L / portTICK_PERIOD_MS;
 #else
@@ -288,7 +293,7 @@ void ESP32BLETracker::real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_
     case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
       global_esp32_ble_tracker->gap_scan_stop_complete_(param->scan_stop_cmpl);
       break;
-    // Extended.
+#ifdef USE_BT5_FEATURES
     case ESP_GAP_BLE_EXT_ADV_REPORT_EVT: {
       if (param->ext_adv_report.params.event_type & ESP_BLE_GAP_SET_EXT_ADV_PROP_LEGACY) {
         // ESP_LOGW(TAG, "legacy adv, adv type 0x%x data len %d", param->ext_adv_report.params.event_type,
@@ -319,6 +324,13 @@ void ESP32BLETracker::real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_
       // xSemaphoreGive(this->scan_end_lock_);
       break;
     }
+    case ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT: {
+      ESP_LOGW(TAG, "ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT");
+    }
+    case ESP_GAP_BLE_PERIODIC_ADV_STOP_COMPLETE_EVT: {
+      ESP_LOGW(TAG, "ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT");
+    }
+#endif
 
     default:
       break;
@@ -340,19 +352,7 @@ void ESP32BLETracker::gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_
   xSemaphoreGive(this->scan_end_lock_);
 }
 
-// void ESP32BLETracker::gap_scan_result_(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param) {
-// if (param.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT) {
-//     if (xSemaphoreTake(this->scan_result_lock_, 0L)) {
-//       if (this->scan_result_index_ < 16) {
-//         this->scan_result_buffer_[this->scan_result_index_++] = param;
-//       }
-//       xSemaphoreGive(this->scan_result_lock_);
-//     }
-//   } else if (param.search_evt == ESP_GAP_SEARCH_INQ_CMPL_EVT) {
-//     xSemaphoreGive(this->scan_end_lock_);
-//   }
-// }
-
+#ifdef USE_BT5_FEATURES
 void ESP32BLETracker::gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &param) {
   // TODO: double check this evt type. This is what arduino-esp32 uses to signal a scan result:
   // https://github.com/espressif/arduino-esp32/blob/7856de7a57420e494176c16c5138174fe2c1dad0/libraries/BLE/src/BLEScan.cpp#L149
@@ -368,6 +368,20 @@ void ESP32BLETracker::gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &p
   //   xSemaphoreGive(this->scan_end_lock_);
   // }
 }
+#else
+void ESP32BLETracker::gap_scan_result_(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param) {
+  if (param.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT) {
+    if (xSemaphoreTake(this->scan_result_lock_, 0L)) {
+      if (this->scan_result_index_ < 16) {
+        this->scan_result_buffer_[this->scan_result_index_++] = param;
+      }
+      xSemaphoreGive(this->scan_result_lock_);
+    }
+  } else if (param.search_evt == ESP_GAP_SEARCH_INQ_CMPL_EVT) {
+    xSemaphoreGive(this->scan_end_lock_);
+  }
+}
+#endif  // USE_BT5_FEATURES
 
 void ESP32BLETracker::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                                           esp_ble_gattc_cb_param_t *param) {
