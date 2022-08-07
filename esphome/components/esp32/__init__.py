@@ -14,7 +14,6 @@ from esphome.const import (
     CONF_VERSION,
     CONF_ADVANCED,
     CONF_IGNORE_EFUSE_MAC_CRC,
-    CONF_USE_BT5_FEATURES,
     KEY_CORE,
     KEY_FRAMEWORK_VERSION,
     KEY_TARGET_FRAMEWORK,
@@ -269,7 +268,6 @@ ESP_IDF_FRAMEWORK_SCHEMA = cv.All(
             cv.Optional(CONF_ADVANCED, default={}): cv.Schema(
                 {
                     cv.Optional(CONF_IGNORE_EFUSE_MAC_CRC, default=False): cv.boolean,
-                    cv.Optional(CONF_USE_BT5_FEATURES, default=False): cv.boolean,
                 }
             ),
         }
@@ -356,9 +354,6 @@ async def to_code(config):
             add_idf_sdkconfig_option(
                 "CONFIG_ESP32_PHY_CALIBRATION_AND_DATA_STORAGE", False
             )
-
-        if conf[CONF_ADVANCED][CONF_USE_BT5_FEATURES]:
-            cg.add_build_flag("-DUSE_BT5_FEATURES")
 
         cg.add_define(
             "USE_ESP_IDF_VERSION_CODE",

@@ -89,8 +89,6 @@ void ESP32BLETracker::loop() {
     }
     for (size_t i = 0; i < index; i++) {
       ESPBTDevice device;
-      // Teach new tricks to device.
-      // device.parse_scan_rst(this->scan_result_buffer_[i]);
       device.parse_ext_scan_rst(this->scan_result_buffer_[i]);
 
       bool found = false;
@@ -102,12 +100,14 @@ void ESP32BLETracker::loop() {
       for (auto *client : this->clients_) {
         if (client->parse_device(device)) {
           found = true;
+
           if (client->state() == ClientState::DISCOVERED) {
-#ifdef USE_BT5_FEATURES
-            esp_ble_gap_stop_ext_scan();
-#else
-            esp_ble_gap_stop_scanning();
-#endif  // USE_BT5_FEATURES
+            esp_err_t err = esp_ble_gap_stop_ext_scan();
+            if (err != ESP_OK) {
+              ESP_LOGE(TAG, "Error while stopping ext scan: %d", err);
+            } else {
+              ESP_LOGI(TAG, "Stopped ext scan");
+            }
 
 #ifdef USE_ARDUINO
             constexpr TickType_t block_time = 10L / portTICK_PERIOD_MS;
@@ -234,34 +234,40 @@ void ESP32BLETracker::start_scan_(bool first) {
       listener->on_scan_end();
   }
   this->already_discovered_.clear();
-  // this->scan_params_.scan_type = this->scan_active_ ? BLE_SCAN_TYPE_ACTIVE : BLE_SCAN_TYPE_PASSIVE;
-  // this->scan_params_.own_addr_type = BLE_ADDR_TYPE_PUBLIC;
-  // this->scan_params_.scan_filter_policy = BLE_SCAN_FILTER_ALLOW_ALL;
-  // this->scan_params_.scan_interval = this->scan_interval_;
-  // this->scan_params_.scan_window = this->scan_window_;
 
-  // esp_ble_gap_set_scan_params(&this->scan_params_);
-  // esp_ble_gap_start_scanning(this->scan_duration_);
   esp_ble_ext_scan_params_t ext_scan_params = {
       .own_addr_type = BLE_ADDR_TYPE_PUBLIC,
       .filter_policy = BLE_SCAN_FILTER_ALLOW_ALL,
       .scan_duplicate = BLE_SCAN_DUPLICATE_DISABLE,
       .cfg_mask = ESP_BLE_GAP_EXT_SCAN_CFG_UNCODE_MASK | ESP_BLE_GAP_EXT_SCAN_CFG_CODE_MASK,
-      .uncoded_cfg = {BLE_SCAN_TYPE_ACTIVE, 40, 40},
-      .coded_cfg = {BLE_SCAN_TYPE_ACTIVE, 40, 40},
+      .uncoded_cfg = {.scan_type = this->scan_active_ ? BLE_SCAN_TYPE_ACTIVE : BLE_SCAN_TYPE_PASSIVE,
+                      .scan_interval = this->scan_interval_,
+                      .scan_window = this->scan_window_},
+      .coded_cfg = {.scan_type = this->scan_active_ ? BLE_SCAN_TYPE_ACTIVE : BLE_SCAN_TYPE_PASSIVE,
+                    .scan_interval = this->scan_interval_,
+                    .scan_window = this->scan_window_},
   };
 
   esp_err_t rc = esp_ble_gap_set_ext_scan_params(&ext_scan_params);
   if (rc)
     ESP_LOGE(TAG, "err esp_ble_gap_set_ext_scan_params: %d", rc);
-  rc = esp_ble_gap_start_ext_scan(/*duration=*/100, /*period=*/3);
+  // I'm not 100% sure about what the period argument in the following function means.
+  // The docs are not super clear: "Time interval from when the Controller started its last Scan Duration until it
+  // begins the subsequent Scan Duration". I would expect it to be >= duration.
+  // The example in
+  // https://github.com/espressif/arduino-esp32/blob/master/libraries/BLE/examples/BLE5_extended_scan/BLE5_extended_scan.ino
+  // has the following comment:
+  // uint32_t scanTime = 100; //In 10ms (1000ms) pBLEScan->startExtScan(scanTime, 3); // scan
+  // duration in n * 10ms, period - repeat after n seconds (period >= duration)
+  // Additional issue: https://github.com/espressif/esp-idf/issues/8130
+  // So it seems scan_duration_ is in multiplese of 10ms and period in seconds.
+  uint16_t period = this->scan_duration_ / 100;
+  rc = esp_ble_gap_start_ext_scan(/*duration=*/this->scan_duration_, period);
   if (rc)
     ESP_LOGE(TAG, "err esp_ble_gap_start_ext_scan: %d", rc);
 
-  // Should we also remove this for extended?
-  // Right now it's reaching the timeout and resetting:
-  // "[00:11:59][W][esp32_ble_tracker:250]: ESP-IDF BLE scan never terminated, rebooting to restore BLE stack..."
-  // This timeout will keep getting overritten.
+  // This timeout will keep getting overritten, so if we fail to overrite it once,
+  // the app will reboot as a safeguard.
   this->set_timeout("scan", this->scan_duration_ * 2000, []() {
     ESP_LOGW(TAG, "ESP-IDF BLE scan never terminated, rebooting to restore BLE stack...");
     App.reboot();
@@ -280,58 +286,21 @@ void ESP32BLETracker::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_ga
 
 void ESP32BLETracker::real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
-    case ESP_GAP_BLE_SCAN_RESULT_EVT:
-      ESP_LOGW(TAG, "[gap_event_handler] LEGACY SCAN HANDLER");
-      // global_esp32_ble_tracker->gap_scan_result_(param->scan_rst);
+    case ESP_GAP_BLE_EXT_ADV_REPORT_EVT:
+      global_esp32_ble_tracker->gap_ext_scan_result_(param->ext_adv_report.params);
       break;
-    case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
-      global_esp32_ble_tracker->gap_scan_set_param_complete_(param->scan_param_cmpl);
-      break;
-    case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
-      global_esp32_ble_tracker->gap_scan_start_complete_(param->scan_start_cmpl);
-      break;
-    case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
-      global_esp32_ble_tracker->gap_scan_stop_complete_(param->scan_stop_cmpl);
-      break;
-#ifdef USE_BT5_FEATURES
-    case ESP_GAP_BLE_EXT_ADV_REPORT_EVT: {
-      if (param->ext_adv_report.params.event_type & ESP_BLE_GAP_SET_EXT_ADV_PROP_LEGACY) {
-        // ESP_LOGW(TAG, "legacy adv, adv type 0x%x data len %d", param->ext_adv_report.params.event_type,
-        //          param->ext_adv_report.params.adv_data_len);
-      } else {
-        ESP_LOGW(TAG, "extend adv, adv type 0x%x data len %d, data status: %d", param->ext_adv_report.params.event_type,
-                 param->ext_adv_report.params.adv_data_len, param->ext_adv_report.params.data_status);
-        const auto &report = param->ext_adv_report.params;
-        global_esp32_ble_tracker->gap_ext_scan_result_(report);
-      }
-      // ESP_LOGW(TAG, "[gap_event_handler] EXT ADV!!");
-      // ESP_LOGW(TAG, "[gap_event_handler] ESP_GAP_BLE_EXT_ADV_REPORT_EVT");
-      // const auto &report = param->ext_adv_report.params;
-      // global_esp32_ble_tracker->gap_ext_scan_result_(report);
-
-      // if (report.event_type & ESP_BLE_GAP_SET_EXT_ADV_PROP_LEGACY) {
-      //   // here we can receive regular advertising data from BLE4.x devices
-      //   // ESP_LOGW(TAG, "BLE4.2");
-      // } else {
-      //   // here we will get extended advertising data that are advertised over data channel by BLE5 divices
-      //   // ESP_LOGW(TAG, "Ext advertise: data_le: %d, data_status: %d \n", report.adv_data_len, report.data_status);
-      // }
-      break;
-    }
-    // TODO handle scan stop.
-    case ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT: {
+    case ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT:
       ESP_LOGW(TAG, "ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT");
-      // xSemaphoreGive(this->scan_end_lock_);
+      global_esp32_ble_tracker->gap_scan_set_param_complete_(param->set_ext_scan_params);
       break;
-    }
-    case ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT: {
-      ESP_LOGW(TAG, "ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT");
-    }
-    case ESP_GAP_BLE_PERIODIC_ADV_STOP_COMPLETE_EVT: {
-      ESP_LOGW(TAG, "ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT");
-    }
-#endif
-
+    case ESP_GAP_BLE_EXT_SCAN_START_COMPLETE_EVT:
+      ESP_LOGD(TAG, "ESP_GAP_BLE_EXT_SCAN_START_COMPLETE_EVT");
+      global_esp32_ble_tracker->gap_scan_start_complete_(param->ext_scan_start);
+      break;
+    case ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT:
+      ESP_LOGD(TAG, "ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT");
+      global_esp32_ble_tracker->gap_scan_stop_complete_(param->ext_scan_stop);
+      break;
     default:
       break;
   }
@@ -340,19 +309,19 @@ void ESP32BLETracker::real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_
   }
 }
 
-void ESP32BLETracker::gap_scan_set_param_complete_(const esp_ble_gap_cb_param_t::ble_scan_param_cmpl_evt_param &param) {
+void ESP32BLETracker::gap_scan_set_param_complete_(
+    const esp_ble_gap_cb_param_t::ble_set_ext_scan_params_cmpl_param &param) {
   this->scan_set_param_failed_ = param.status;
 }
 
-void ESP32BLETracker::gap_scan_start_complete_(const esp_ble_gap_cb_param_t::ble_scan_start_cmpl_evt_param &param) {
+void ESP32BLETracker::gap_scan_start_complete_(const esp_ble_gap_cb_param_t::ble_ext_scan_start_cmpl_param &param) {
   this->scan_start_failed_ = param.status;
 }
 
-void ESP32BLETracker::gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_scan_stop_cmpl_evt_param &param) {
+void ESP32BLETracker::gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_ext_scan_stop_cmpl_param &param) {
   xSemaphoreGive(this->scan_end_lock_);
 }
 
-#ifdef USE_BT5_FEATURES
 void ESP32BLETracker::gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &param) {
   // TODO: double check this evt type. This is what arduino-esp32 uses to signal a scan result:
   // https://github.com/espressif/arduino-esp32/blob/7856de7a57420e494176c16c5138174fe2c1dad0/libraries/BLE/src/BLEScan.cpp#L149
@@ -368,20 +337,6 @@ void ESP32BLETracker::gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &p
   //   xSemaphoreGive(this->scan_end_lock_);
   // }
 }
-#else
-void ESP32BLETracker::gap_scan_result_(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param) {
-  if (param.search_evt == ESP_GAP_SEARCH_INQ_RES_EVT) {
-    if (xSemaphoreTake(this->scan_result_lock_, 0L)) {
-      if (this->scan_result_index_ < 16) {
-        this->scan_result_buffer_[this->scan_result_index_++] = param;
-      }
-      xSemaphoreGive(this->scan_result_lock_);
-    }
-  } else if (param.search_evt == ESP_GAP_SEARCH_INQ_CMPL_EVT) {
-    xSemaphoreGive(this->scan_end_lock_);
-  }
-}
-#endif  // USE_BT5_FEATURES
 
 void ESP32BLETracker::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                                           esp_ble_gattc_cb_param_t *param) {
@@ -584,13 +539,9 @@ void ESPBTDevice::parse_ext_scan_rst(const esp_ble_gap_ext_adv_reprot_t &param) 
   esp_ble_gap_cb_param_t::ble_scan_result_evt_param legacy_param{};
   // TODO: warn if we have to truncate adv_len.
   legacy_param.adv_data_len = param.adv_data_len;
-  // legacy_param.ble_adv = &param.adv_data[0];
-  // memcpy(legacy_param.ble_adv, (esp_bd_addr_t *) param.adv_data, legacy_param.adv_data_len);
   memcpy(legacy_param.ble_adv, param.adv_data, legacy_param.adv_data_len);
-  // legacy_param.ble_addr_type = param.addr_type;
   // TODO: map values.
   legacy_param.ble_addr_type = BLE_ADDR_TYPE_RANDOM;
-  // legacy_param.bda = param.addr;
   memcpy(legacy_param.bda, param.addr, sizeof(legacy_param.bda));
   return parse_scan_rst(legacy_param);
 }

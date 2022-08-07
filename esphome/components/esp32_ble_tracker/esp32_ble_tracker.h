@@ -12,6 +12,11 @@
 #include <esp_gattc_api.h>
 #include <esp_bt_defs.h>
 
+#ifndef CONFIG_BT_BLE_50_FEATURES_SUPPORTED
+#error \
+    "CONFIG_BT_BLE_50_FEATURES_SUPPORTED for esp-idf SDK is not defined. Make sure to add it in your YAML file under esp32:sdkconfig_options:."
+#endif
+
 namespace esphome {
 namespace esp32_ble_tracker {
 
@@ -75,9 +80,7 @@ class ESPBLEiBeacon {
 
 class ESPBTDevice {
  public:
-#ifdef USE_BT5_FEATURES
   void parse_ext_scan_rst(const esp_ble_gap_ext_adv_reprot_t &param);
-#endif  // USE_BT5_FEATURES
   void parse_scan_rst(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param);
 
   std::string address_str() const;
@@ -199,18 +202,19 @@ class ESP32BLETracker : public Component {
   /// Callback that will handle all GAP events and redistribute them to other callbacks.
   static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
   void real_gap_event_handler_(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
-#ifdef USE_BT5_FEATURES
   void gap_ext_scan_result_(const esp_ble_gap_ext_adv_reprot_t &param);
-#else
-  /// Called when a `ESP_GAP_BLE_SCAN_RESULT_EVT` event is received.
-  void gap_scan_result_(const esp_ble_gap_cb_param_t::ble_scan_result_evt_param &param);
-#endif  // USE_BT5_FEATUREES
   /// Called when a `ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT` event is received.
-  void gap_scan_set_param_complete_(const esp_ble_gap_cb_param_t::ble_scan_param_cmpl_evt_param &param);
-  /// Called when a `ESP_GAP_BLE_SCAN_START_COMPLETE_EVT` event is received.
-  void gap_scan_start_complete_(const esp_ble_gap_cb_param_t::ble_scan_start_cmpl_evt_param &param);
+  // void gap_scan_set_param_complete_(const esp_ble_gap_cb_param_t::ble_scan_param_cmpl_evt_param &param);
+  /// Called when a `ESP_GAP_BLE_SET_EXT_SCAN_PARAMS_COMPLETE_EVT` event is received.
+  void gap_scan_set_param_complete_(const esp_ble_gap_cb_param_t::ble_set_ext_scan_params_cmpl_param &param);
+  // /// Called when a `ESP_GAP_BLE_SCAN_START_COMPLETE_EVT` event is received.
+  // void gap_scan_start_complete_(const esp_ble_gap_cb_param_t::ble_scan_start_cmpl_evt_param &param);
+  /// Called when a `ESP_GAP_BLE_EXT_SCAN_START_COMPLETE_EVT` event is received.
+  void gap_scan_start_complete_(const esp_ble_gap_cb_param_t::ble_ext_scan_start_cmpl_param &param);
   /// Called when a `ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT` event is received.
-  void gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_scan_stop_cmpl_evt_param &param);
+  // void gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_scan_stop_cmpl_evt_param &param);
+  /// Called when a `ESP_GAP_BLE_EXT_SCAN_STOP_COMPLETE_EVT` event is received.
+  void gap_scan_stop_complete_(const esp_ble_gap_cb_param_t::ble_ext_scan_stop_cmpl_param &param);
 
   int app_id_;
   /// Callback that will handle all GATTC events and redistribute them to other callbacks.
@@ -222,25 +226,16 @@ class ESP32BLETracker : public Component {
   std::vector<ESPBTDeviceListener *> listeners_;
   /// Client parameters.
   std::vector<ESPBTClient *> clients_;
-#ifdef USE_BT5_FEATURES
   esp_ble_ext_scan_params_t ext_scan_params_;
-#else
-  /// A structure holding the ESP BLE scan parameters.
-  esp_ble_scan_params_t scan_params_;
-#endif  // USE_BT5_FEATURES
   /// The interval in seconds to perform scans.
   uint32_t scan_duration_;
-  uint32_t scan_interval_;
-  uint32_t scan_window_;
+  uint16_t scan_interval_;
+  uint16_t scan_window_;
   bool scan_active_;
   SemaphoreHandle_t scan_result_lock_;
   SemaphoreHandle_t scan_end_lock_;
   size_t scan_result_index_{0};
-#ifdef USE_BT5_FEATURES
   esp_ble_gap_ext_adv_reprot_t scan_result_buffer_[16];
-#else
-  esp_ble_gap_cb_param_t::ble_scan_result_evt_param scan_result_buffer_[16];
-#endif  // USE_BT5_FEATURES
   esp_bt_status_t scan_start_failed_{ESP_BT_STATUS_SUCCESS};
   esp_bt_status_t scan_set_param_failed_{ESP_BT_STATUS_SUCCESS};
 
