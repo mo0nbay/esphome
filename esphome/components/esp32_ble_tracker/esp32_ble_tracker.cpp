@@ -123,6 +123,9 @@ void ESP32BLETracker::loop() {
 
       if (!found) {
         this->print_bt_device_info(device);
+      } else {
+        // https://github.com/espressif/esp-idf/blob/master/components/bt/host/bluedroid/api/include/api/esp_gap_ble_api.h#L719
+        ESP_LOGE(TAG, "PHY TYPE: %d", this->scan_result_buffer_[i].primary_phy);
       }
     }
 
