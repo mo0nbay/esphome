@@ -23,11 +23,32 @@ struct PDO {
     uint16_t max_power_mw;
   };
 
+  struct Augmented {
+    enum class Type {
+      SPR_PPS = 0b00,  // Standard Power programmable power supply.
+      EPR_AVS = 0b01,  // Extended power range adjustable voltage supply.
+      SPR_AVS = 0b10,  // Standard power range adjustable voltage supply.
+    };
+    Type type;
+
+    // Table 6.13.
+    struct SPR_PPS {
+      uint16_t max_voltage_mv;
+      uint16_t min_voltage_mv;
+      uint16_t max_current_ma;
+    };
+
+    union {
+      SPR_PPS spr_pps;
+    };
+  };
+
   Type type;
   bool parsed = false;
   union {
     Fixed fixed;
     Variable variable;
+    Augmented augmented;
   };
 };
 

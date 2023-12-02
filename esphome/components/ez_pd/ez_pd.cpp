@@ -39,7 +39,6 @@ void EZPD::setup() {
   this->int_pin_->pin_mode(gpio::FLAG_INPUT);
   this->int_pin_->setup();
 
-  // this->int_pin_->attach_interrupt([](EZPD *instance) {}, this, gpio::INTERRUPT_FALLING_EDGE);
   this->int_pin_->attach_interrupt(ISR, this, gpio::INTERRUPT_FALLING_EDGE);
 
   uint32_t pd_response;
@@ -63,6 +62,8 @@ void EZPD::setup() {
     ESP_LOGI(TAG, "Device id: 0x%04X", device_id);
   }
 
+  delay_microseconds_safe(5000);
+
   this->get_vbus_voltage_();
   this->get_current_pdo();
 
@@ -80,14 +81,12 @@ void EZPD::setup() {
   event_mask |= (1 << 8);  // Source capabilities received.
 
   // event_mask |= 0xffff;
-  // if (this->write_register16(REG_EVENT_MASK, (uint8_t *) &event_mask, sizeof(event_mask))) {
-  //   ESP_LOGE(TAG, "Failed to write event mask");
-  // }
+  if (this->write_register16(REG_EVENT_MASK, (uint8_t *) &event_mask, sizeof(event_mask))) {
+    ESP_LOGE(TAG, "Failed to write event mask");
+  }
 
   // Check for active interrupts (it may have asserted before we set up the int pin).
   // ISR(this);
-
-  // delay_microseconds_safe(5000);
 
   // TODO: datasheet says it could trigger a power cycle.
   uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
