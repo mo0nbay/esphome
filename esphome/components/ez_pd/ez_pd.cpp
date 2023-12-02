@@ -292,6 +292,12 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
   ESP_LOGI(TAG, "Selected PDO:");
   log_pdo(pdos[selected_pdo_idx]);
 
+  if (pdos[selected_pdo_idx].type != PDO::Type::FIXED) {
+    ESP_LOGE(TAG, "Selected PDO is not fixed, we don't know how to handle it yet.");
+    // TODO: maybe change power requirements and set up the safe 5V PDO.
+    return false;
+  }
+
   const uint8_t header[] = {0x50, 0x4B, 0x4E, 0x53};
   for (uint8_t i = 0; i < 4; i++) {
     if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), header + i, 1)) {
@@ -299,7 +305,7 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
       return false;
     }
   }
-  // uint8_t select_sink_pdo = selected_pdo_idx;
+
   uint8_t select_sink_pdo = 1 << (selected_pdo_idx & 0x7);
   if (this->write_register16(REG_SELECT_SINK_PDO, &select_sink_pdo, 1)) {
     ESP_LOGE(TAG, "Failed to write select sink PDO");
