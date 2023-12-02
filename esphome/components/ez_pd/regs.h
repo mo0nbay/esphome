@@ -26,5 +26,7 @@ constexpr uint16_t REG_READ_MEM_LO = 0x1404;
 // 0x1800 to 0x19ff.
 constexpr uint16_t REG_WRITE_MEM_LO = 0x1800;
 
+constexpr uint16_t REG_SELECT_SINK_PDO = 0x0510;
+
 }  // namespace ez_pd
 }  // namespace esphome

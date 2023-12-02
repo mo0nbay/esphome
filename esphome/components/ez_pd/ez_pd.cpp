@@ -88,6 +88,12 @@ void EZPD::setup() {
   // Check for active interrupts (it may have asserted before we set up the int pin).
   // ISR(this);
 
+  // Test: enable 5V.
+  // uint8_t select_sink_pdo = 0x01;
+  // if (this->write_register16(REG_SELECT_SINK_PDO, &select_sink_pdo, 1)) {
+  //   ESP_LOGE(TAG, "Failed to write select sink PDO");
+  // }
+
   // TODO: datasheet says it could trigger a power cycle.
   uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
   if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
@@ -119,8 +125,8 @@ void EZPD::loop() {
   this->process_interrupt();
   // }
 
-  // this->get_vbus_voltage_();
-  // this->get_current_pdo();
+  this->get_vbus_voltage_();
+  this->get_current_pdo();
 }
 
 void EZPD::dump_config() { ESP_LOGCONFIG(TAG, "ez_pd component"); }
@@ -212,6 +218,7 @@ bool EZPD::process_interrupt() {
   return true;
 }
 
+// TODO: break loop.
 bool EZPD::handle_pd_response(uint32_t pd_response) {
   ESP_LOGI(TAG, "PD response: 0x%08X", pd_response);
   ESP_LOGI(TAG, "PD response: %s", pd_response & (1 << 7) ? "ASYNC" : "CMD");
@@ -239,6 +246,16 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
       ESP_LOGE(TAG, "Failed to read PD response data");
       return false;
     }
+
+    if (i < 4) {
+      ESP_LOGI(TAG, "PD response data at %d: 0x%02X", i, buff[i]);
+    }
+
+    // Write to memory write registers.
+    if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), &buff[i], 1)) {
+      ESP_LOGE(TAG, "Failed to write PD response data");
+      return false;
+    }
   }
 
   ESP_LOGI(TAG, "Read PD response data from memory");
@@ -247,6 +264,20 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
     uint32_t *pdo_data = (uint32_t *) &buff[i * 4 + 4];
     PDO pdo = parse_pdo(*pdo_data);
     log_pdo(pdo);
+  }
+
+  // Will select PDO 1 (9V).
+  // const char *header = "SNKP";
+  const uint8_t header[] = {0x50, 0x4B, 0x4E, 0x53};
+  for (uint8_t i = 0; i < 4; i++) {
+    if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), header + i, 1)) {
+      ESP_LOGE(TAG, "Failed to write PD response data");
+      return false;
+    }
+  }
+  uint8_t select_sink_pdo = 0x01;
+  if (this->write_register16(REG_SELECT_SINK_PDO, &select_sink_pdo, 1)) {
+    ESP_LOGE(TAG, "Failed to write select sink PDO");
   }
 
   return true;
