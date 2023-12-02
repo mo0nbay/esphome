@@ -72,6 +72,26 @@ PDO parse_pdo(uint32_t data) {
   return pdo;
 }
 
+bool is_pdo_compatible(const PDO &pdo, const PowerRequirement &power_requirement) {
+  if (pdo.type == PDO::Type::FIXED) {
+    return pdo.fixed.voltage_mv == power_requirement.voltage_mv &&
+           pdo.fixed.max_current_ma >= power_requirement.current_ma;
+  } else if (pdo.type == PDO::Type::VARIABLE) {
+    // Untested, so commented out for now.
+    // return pdo.variable.max_voltage_mv >= power_requirement.voltage_mv &&
+    //        pdo.variable.min_voltage_mv <= power_requirement.voltage_mv &&
+    //        pdo.variable.max_power_mw >= power_requirement.voltage_mv * power_requirement.current_ma;
+    return false;
+  } else if (pdo.type == PDO::Type::AUGMENTED) {
+    if (pdo.augmented.type == PDO::Augmented::Type::SPR_PPS) {
+      return pdo.augmented.spr_pps.max_voltage_mv >= power_requirement.voltage_mv &&
+             pdo.augmented.spr_pps.min_voltage_mv <= power_requirement.voltage_mv &&
+             pdo.augmented.spr_pps.max_current_ma >= power_requirement.current_ma;
+    }
+  }
+  return false;
+}
+
 void log_pdo(const PDO &pdo) {
   if (pdo.type == PDO::Type::FIXED) {
     ESP_LOGI(TAG, "Fixed PDO: %d mV, %d mA", pdo.fixed.voltage_mv, pdo.fixed.max_current_ma);

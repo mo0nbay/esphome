@@ -4,6 +4,8 @@
 #include "esphome/core/gpio.h"
 #include "esphome/components/i2c/i2c.h"
 
+#include "esphome/components/ez_pd/pdo.h"
+
 namespace esphome {
 namespace ez_pd {
 
@@ -16,13 +18,18 @@ class EZPD : public i2c::I2CDevice, public Component {
   void set_interrupt_pin(InternalGPIOPin *int_pin) { this->int_pin_ = int_pin; }
 
  private:
+  PowerRequirement power_requirement_{
+      .voltage_mv = 15000,
+      .current_ma = 2000,
+  };
+
   float get_vbus_voltage_();
   // Interrupt pin.
   InternalGPIOPin *int_pin_{nullptr};
   bool interrupt_pending_{false};
 
   // Methods.
-  void get_current_pdo();
+  PDO get_current_pdo();
   bool process_interrupt();
 
   bool handle_pd_response(uint32_t pd_response);

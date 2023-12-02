@@ -4,7 +4,7 @@
 #include "pdo.h"
 #include "regs.h"
 
-// #define HAS_BIT(v, b) (((v) >> (b)) & 0x1)
+#define MAX_PDOS 7
 
 #define HAS_BITS(v, b, n) (((v) >> (b)) & ((1 << (n)) - 1))
 #define HAS_BIT(v, b) (HAS_BITS(v, b, 1))
@@ -94,6 +94,8 @@ void EZPD::setup() {
   //   ESP_LOGE(TAG, "Failed to write select sink PDO");
   // }
 
+  // TODO: maybe quickly check current PDO and quickly bail out if it's already compatible.
+
   // TODO: datasheet says it could trigger a power cycle.
   uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
   if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
@@ -142,12 +144,12 @@ float EZPD::get_vbus_voltage_() {
   return bus_voltage;
 }
 
-void EZPD::get_current_pdo() {
+PDO EZPD::get_current_pdo() {
   // TODO: uint32_t.
   uint8_t pdo_bytes[4];
   if (this->read_register16(REG_CURRENT_PDO, pdo_bytes, sizeof(pdo_bytes))) {
     ESP_LOGE(TAG, "Failed to read current PDO");
-    return;
+    return PDO{};
   }
 
   ESP_LOGD(TAG, "PDO: %02X %02X %02X %02X\n", pdo_bytes[0], pdo_bytes[1], pdo_bytes[2], pdo_bytes[3]);
@@ -158,19 +160,14 @@ void EZPD::get_current_pdo() {
   PDO pdo = parse_pdo(pdo_data);
   if (!pdo.parsed) {
     ESP_LOGE(TAG, "Failed to parse PDO");
-    return;
+    return PDO{};
   }
-
   log_pdo(pdo);
+  return pdo;
 }
 
 // Interrupt callback.
-void EZPD::ISR(EZPD *instance) {
-  // ESP_LOGI(TAG, "ISR");
-  // instance->get_vbus_voltage_();
-  // instance->get_current_pdo();
-  instance->interrupt_pending_ = true;
-}
+void EZPD::ISR(EZPD *instance) { instance->interrupt_pending_ = true; }
 
 bool EZPD::process_interrupt() {
   // ESP_LOGI(TAG, "Processing interrupt");
@@ -232,12 +229,26 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
   ESP_LOGI(TAG, "PD response code: 0x%02X, len: 0x%02X", code, len);
 
   if (code != 0x91) {
-    ESP_LOGW(TAG, "Unexpected PD response code");
+    ESP_LOGW(TAG, "Nothing to do with response code 0x%02X", code);
     return false;
   }
 
+  PDO curr_pdo = get_current_pdo();
+  if (is_pdo_compatible(curr_pdo, this->power_requirement_)) {
+    ESP_LOGI(TAG, "Current PDO is compatible, we're done here");
+    return false;
+  }
+  ESP_LOGI(TAG, "Current PDO is not compatible, requesting changes.");
+
   uint8_t n_pdos = (len - 4) / 4;
   ESP_LOGI(TAG, "Number of PDOS: %d", n_pdos);
+
+  if (n_pdos > MAX_PDOS) {
+    ESP_LOGE(TAG, "Too many PDOS");
+    return false;
+  }
+
+  ESP_LOGI(TAG, "Reading PD response data from memory");
 
   // TODO: check bounds.
   uint8_t buff[128];
@@ -258,16 +269,29 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
     }
   }
 
-  ESP_LOGI(TAG, "Read PD response data from memory");
+  PDO pdos[MAX_PDOS];
 
+  // As per spec, PDOs are ordered by voltage so we select the first one that's compatible.
+  int selected_pdo_idx = -1;
   for (uint8_t i = 0; i < n_pdos; i++) {
     uint32_t *pdo_data = (uint32_t *) &buff[i * 4 + 4];
-    PDO pdo = parse_pdo(*pdo_data);
-    log_pdo(pdo);
+    pdos[i] = parse_pdo(*pdo_data);
+    log_pdo(pdos[i]);
+
+    if (selected_pdo_idx == -1 && is_pdo_compatible(pdos[i], this->power_requirement_)) {
+      selected_pdo_idx = i;
+      break;
+    }
   }
 
-  // Will select PDO 1 (9V).
-  // const char *header = "SNKP";
+  if (selected_pdo_idx == -1) {
+    ESP_LOGE(TAG, "No compatible PDO found");
+    return false;
+  }
+
+  ESP_LOGI(TAG, "Selected PDO:");
+  log_pdo(pdos[selected_pdo_idx]);
+
   const uint8_t header[] = {0x50, 0x4B, 0x4E, 0x53};
   for (uint8_t i = 0; i < 4; i++) {
     if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), header + i, 1)) {
@@ -275,9 +299,11 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
       return false;
     }
   }
-  uint8_t select_sink_pdo = 0x01;
+  // uint8_t select_sink_pdo = selected_pdo_idx;
+  uint8_t select_sink_pdo = 1 << (selected_pdo_idx & 0x7);
   if (this->write_register16(REG_SELECT_SINK_PDO, &select_sink_pdo, 1)) {
     ESP_LOGE(TAG, "Failed to write select sink PDO");
+    return false;
   }
 
   return true;

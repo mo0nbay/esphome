@@ -52,7 +52,14 @@ struct PDO {
   };
 };
 
+struct PowerRequirement {
+  uint16_t voltage_mv;
+  uint16_t current_ma;
+};
+
 PDO parse_pdo(uint32_t data);
+
+bool is_pdo_compatible(const PDO &pdo, const PowerRequirement &power_requirement);
 
 void log_pdo(const PDO &pdo);
 
