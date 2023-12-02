@@ -4,16 +4,51 @@
 #include "pdo.h"
 #include "regs.h"
 
+// #define HAS_BIT(v, b) (((v) >> (b)) & 0x1)
+
+#define HAS_BITS(v, b, n) (((v) >> (b)) & ((1 << (n)) - 1))
+#define HAS_BIT(v, b) (HAS_BITS(v, b, 1))
+
+#define SWAP16(v) ((((v) >> 8) & 0xff) | (((v) & 0xff) << 8))
+
 namespace esphome {
 namespace ez_pd {
 
 static const char *TAG = "ez_pd.component";
 
-namespace {}  // namespace
+namespace {
 
-void EZPD::setup() {}
+void dump_pd_status(uint32_t pd_status) {
+  ESP_LOGI(TAG, "PD status: 0x%08X", pd_status);
+  ESP_LOGI(TAG, "- Current port data role: %s", HAS_BIT(pd_status, 6) == 0 ? "UFP" : "DFP");
+  ESP_LOGI(TAG, "- Current port power role: %s", HAS_BIT(pd_status, 8) == 0 ? "Sink" : "INVALID");
+  ESP_LOGI(TAG, "- Contract state: %s", HAS_BIT(pd_status, 10) == 0 ? "No contract" : "Exists");
+  ESP_LOGI(TAG, "- Sink TX: %s", HAS_BIT(pd_status, 14) == 0 ? "Ready" : "Not ready");
+  ESP_LOGI(TAG, "- Policy engine state: %s", HAS_BIT(pd_status, 15) == 0 ? "Not ready" : "Ready");
+  ESP_LOGI(TAG, "- PD spec revision in BCR: %s", HAS_BIT(pd_status, 16) == 0 ? "2.0" : "3.0");
+  ESP_LOGI(TAG, "- PD spec revision in Partner: %s", HAS_BIT(pd_status, 18) == 0 ? "2.0" : "3.0");
+}
 
-void EZPD::loop() {
+}  // namespace
+
+void EZPD::setup() {
+  ESP_LOGI(TAG, "Setup");
+
+  // Attach interrupt -- active low.
+  // this->int_pin_->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP);
+  this->int_pin_->pin_mode(gpio::FLAG_INPUT);
+  this->int_pin_->setup();
+
+  // this->int_pin_->attach_interrupt([](EZPD *instance) {}, this, gpio::INTERRUPT_FALLING_EDGE);
+  this->int_pin_->attach_interrupt(ISR, this, gpio::INTERRUPT_FALLING_EDGE);
+
+  uint32_t pd_response;
+  if (this->read_register16(REG_PD_RESPONSE, (uint8_t *) &pd_response, sizeof(pd_response))) {
+    ESP_LOGE(TAG, "Failed to read PD_RESPONSE");
+  } else {
+    ESP_LOGI(TAG, "PD response: 0x%08X", pd_response);
+  }
+
   uint8_t device_mode;
   if (this->read_register16(REG_DEVICE_MODE, &device_mode, 1, true)) {
     ESP_LOGE(TAG, "Failed to read device mode");
@@ -29,8 +64,64 @@ void EZPD::loop() {
   }
 
   this->get_vbus_voltage_();
-
   this->get_current_pdo();
+
+  uint32_t pd_status;
+  if (this->read_register16(REG_PD_STATUS, (uint8_t *) &pd_status, sizeof(pd_status))) {
+    ESP_LOGE(TAG, "Failed to read PD status");
+  } else {
+    dump_pd_status(pd_status);
+  }
+
+  // Enable interrupt events.
+  uint32_t event_mask = 0x00000000;
+  event_mask |= (1 << 5);  // PD negotiation complete.
+  event_mask |= (1 << 6);  // PD control message received.
+  event_mask |= (1 << 8);  // Source capabilities received.
+
+  // event_mask |= 0xffff;
+  // if (this->write_register16(REG_EVENT_MASK, (uint8_t *) &event_mask, sizeof(event_mask))) {
+  //   ESP_LOGE(TAG, "Failed to write event mask");
+  // }
+
+  // Check for active interrupts (it may have asserted before we set up the int pin).
+  // ISR(this);
+
+  // delay_microseconds_safe(5000);
+
+  // TODO: datasheet says it could trigger a power cycle.
+  uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
+  if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
+    ESP_LOGE(TAG, "Failed to write PD control");
+  }
+
+  // uint16_t reset = 'R' | (1 << 8);
+  // if (this->write_register16(REG_RESET, (uint8_t *) &reset, sizeof(reset))) {
+  //   ESP_LOGE(TAG, "Failed to write reset");
+  // }
+
+  // delay_microseconds_safe(50000);
+
+  // uint8_t interrupt;
+  // if (this->read_register16(REG_INTERRUPT, &interrupt, 1)) {
+  //   ESP_LOGE(TAG, "Failed to read interrupt");
+  // } else {
+  //   ESP_LOGI(TAG, "Interrupt: 0x%02X", interrupt);
+  // }
+
+  // // Clear interrupt.
+  // if (this->write_register16(REG_INTERRUPT, &interrupt, 1)) {
+  //   ESP_LOGE(TAG, "Failed to clear interrupt");
+  // }
+}
+
+void EZPD::loop() {
+  // if (this->interrupt_pending_) {
+  this->process_interrupt();
+  // }
+
+  // this->get_vbus_voltage_();
+  // this->get_current_pdo();
 }
 
 void EZPD::dump_config() { ESP_LOGCONFIG(TAG, "ez_pd component"); }
@@ -46,8 +137,8 @@ float EZPD::get_vbus_voltage_() {
   return bus_voltage;
 }
 
-// For PDO representation, see table 6.7 in the USB_PD specs.
 void EZPD::get_current_pdo() {
+  // TODO: uint32_t.
   uint8_t pdo_bytes[4];
   if (this->read_register16(REG_CURRENT_PDO, pdo_bytes, sizeof(pdo_bytes))) {
     ESP_LOGE(TAG, "Failed to read current PDO");
@@ -56,6 +147,7 @@ void EZPD::get_current_pdo() {
 
   ESP_LOGD(TAG, "PDO: %02X %02X %02X %02X\n", pdo_bytes[0], pdo_bytes[1], pdo_bytes[2], pdo_bytes[3]);
 
+  // Bytes are received in little endian.
   uint32_t pdo_data = pdo_bytes[0] | (pdo_bytes[1] << 8) | (pdo_bytes[2] << 16) | (pdo_bytes[3] << 24);
 
   PDO pdo = parse_pdo(pdo_data);
@@ -65,21 +157,100 @@ void EZPD::get_current_pdo() {
   }
 
   log_pdo(pdo);
+}
 
-  // switch (pdo_bytes[0] & 0x3) {
-  //   case 0b00:
-  //     ESP_LOGI(TAG, "PDO: Fixed supply");
-  //     break;
-  //   case 0b01:
-  //     ESP_LOGI(TAG, "PDO: Battery supply");
-  //     break;
-  //   case 0b10:
-  //     ESP_LOGI(TAG, "PDO: Variable supply");
-  //     break;
-  //   case 0b11:
-  //     ESP_LOGI(TAG, "PDO: Augmented supply");
-  //     break;
-  // }
+// Interrupt callback.
+void EZPD::ISR(EZPD *instance) {
+  // ESP_LOGI(TAG, "ISR");
+  // instance->get_vbus_voltage_();
+  // instance->get_current_pdo();
+  instance->interrupt_pending_ = true;
+}
+
+bool EZPD::process_interrupt() {
+  // ESP_LOGI(TAG, "Processing interrupt");
+
+  // Read interrupt.
+  uint8_t interrupt;
+  if (this->read_register16(REG_INTERRUPT, &interrupt, 1)) {
+    ESP_LOGE(TAG, "Failed to read interrupt");
+    return false;
+  }
+
+  if (!interrupt) {
+    // ESP_LOGE(TAG, "Interrupt is not actually set");
+    return false;
+  }
+  // ESP_LOGI(TAG, "Interrupt: 0x%02X", interrupt);
+
+  if (interrupt & 0x1) {
+    ESP_LOGI(TAG, "Device interrupt");
+    uint16_t dev_response;
+    if (this->read_register16(REG_DEV_RESPONSE, (uint8_t *) &dev_response, sizeof(dev_response))) {
+      ESP_LOGE(TAG, "Failed to read DEV_RESPONSE");
+    } else {
+      ESP_LOGI(TAG, "Device response: 0x%04X", dev_response);
+    }
+  }
+  if (interrupt & 0x2) {
+    ESP_LOGI(TAG, "PD port interrupt");
+    uint32_t pd_response;
+    if (this->read_register16(REG_PD_RESPONSE, (uint8_t *) &pd_response, sizeof(pd_response))) {
+      ESP_LOGE(TAG, "Failed to read PD_RESPONSE");
+    } else {
+      this->handle_pd_response(pd_response);
+    }
+  }
+
+  // Clear interrupt.
+  interrupt = 0xff;
+  if (this->write_register16(REG_INTERRUPT, &interrupt, 1)) {
+    ESP_LOGE(TAG, "Failed to clear interrupt");
+    return false;
+  }
+
+  interrupt_pending_ = false;
+  return true;
+}
+
+bool EZPD::handle_pd_response(uint32_t pd_response) {
+  ESP_LOGI(TAG, "PD response: 0x%08X", pd_response);
+  ESP_LOGI(TAG, "PD response: %s", pd_response & (1 << 7) ? "ASYNC" : "CMD");
+
+  // TODO: longer responses are possible.
+
+  // This seems weird. From the datasheet, we should do & 0x7f, but that doesn't work.
+  // Doing & 0xff yields the expected results.
+  uint8_t code = pd_response & 0xff;
+  uint8_t len = (pd_response >> 8) & 0xff;
+  ESP_LOGI(TAG, "PD response code: 0x%02X, len: 0x%02X", code, len);
+
+  if (code != 0x91) {
+    ESP_LOGW(TAG, "Unexpected PD response code");
+    return false;
+  }
+
+  uint8_t n_pdos = (len - 4) / 4;
+  ESP_LOGI(TAG, "Number of PDOS: %d", n_pdos);
+
+  // TODO: check bounds.
+  uint8_t buff[128];
+  for (uint8_t i = 0; i < len; i++) {
+    if (this->read_register16(SWAP16(REG_READ_MEM_LO + i), &buff[i], 1)) {
+      ESP_LOGE(TAG, "Failed to read PD response data");
+      return false;
+    }
+  }
+
+  ESP_LOGI(TAG, "Read PD response data from memory");
+
+  for (uint8_t i = 0; i < n_pdos; i++) {
+    uint32_t *pdo_data = (uint32_t *) &buff[i * 4 + 4];
+    PDO pdo = parse_pdo(*pdo_data);
+    log_pdo(pdo);
+  }
+
+  return true;
 }
 
 }  // namespace ez_pd

@@ -3,6 +3,7 @@
 namespace esphome {
 namespace ez_pd {
 
+// For PDO representation, see table 6.7 in the USB PD specs.
 struct PDO {
   enum class Type {
     FIXED = 0b00,
