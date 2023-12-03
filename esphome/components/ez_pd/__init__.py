@@ -3,7 +3,7 @@ import esphome.config_validation as cv
 
 from esphome import pins
 from esphome.components import i2c
-from esphome.const import CONF_ID, CONF_INTERRUPT_PIN
+from esphome.const import CONF_ID, CONF_INTERRUPT_PIN, CONF_VOLTAGE, CONF_CURRENT
 
 DEPENDENCIES = ["i2c"]
 
@@ -19,6 +19,8 @@ CONFIG_SCHEMA = (
             cv.Required(CONF_INTERRUPT_PIN): cv.All(
                 pins.internal_gpio_input_pin_schema
             ),
+            cv.Required(CONF_VOLTAGE): cv.voltage,
+            cv.Required(CONF_CURRENT): cv.current,
         }
     )
     .extend(cv.COMPONENT_SCHEMA)
@@ -33,3 +35,8 @@ async def to_code(config):
 
     interrupt_pin = await cg.gpio_pin_expression(config[CONF_INTERRUPT_PIN])
     cg.add(var.set_interrupt_pin(interrupt_pin))
+    cg.add(
+        var.set_power_requirement(
+            1000 * config[CONF_VOLTAGE], 1000 * config[CONF_CURRENT]
+        )
+    )

@@ -8,39 +8,6 @@ static const char *TAG = "ez_pd.pdo";
 namespace esphome {
 namespace ez_pd {
 
-// Example of a Variable PDO:
-// 2C C1 03 00
-// 00101100 11000001 00000011 00000000
-// 31:30 00 - PDO type: fixed
-// 29: 1
-// 28: 0
-// 27 1
-// 26 1
-// 25 0
-// 24 0
-// 23 1
-// 22 1
-// 21: 20 00
-// 19:10 0001000000  3.2V
-// 9:0   1100000000  38 Does not make sense
-
-// Let's try the reverse:
-
-// Example of a fixed PDO (note that it's reversed)
-// 00000000 00000011 11000001 00101100
-// 00 fixed
-// 0
-// 0
-// 0
-// 0
-// 0
-// 0
-// 0
-// 0
-// 00 peak current
-// 0011110000 * 0.05 = 12V
-// 0100101100 * 0.01 = 3.0 A
-
 PDO parse_pdo(uint32_t data) {
   PDO pdo;
   pdo.type = static_cast<PDO::Type>(data >> 30);
@@ -76,12 +43,6 @@ bool is_pdo_compatible(const PDO &pdo, const PowerRequirement &power_requirement
   if (pdo.type == PDO::Type::FIXED) {
     return pdo.fixed.voltage_mv == power_requirement.voltage_mv &&
            pdo.fixed.max_current_ma >= power_requirement.current_ma;
-  } else if (pdo.type == PDO::Type::VARIABLE) {
-    // Untested, so commented out for now.
-    // return pdo.variable.max_voltage_mv >= power_requirement.voltage_mv &&
-    //        pdo.variable.min_voltage_mv <= power_requirement.voltage_mv &&
-    //        pdo.variable.max_power_mw >= power_requirement.voltage_mv * power_requirement.current_ma;
-    return false;
   } else if (pdo.type == PDO::Type::AUGMENTED) {
     if (pdo.augmented.type == PDO::Augmented::Type::SPR_PPS) {
       return pdo.augmented.spr_pps.max_voltage_mv >= power_requirement.voltage_mv &&
@@ -89,6 +50,7 @@ bool is_pdo_compatible(const PDO &pdo, const PowerRequirement &power_requirement
              pdo.augmented.spr_pps.max_current_ma >= power_requirement.current_ma;
     }
   }
+  ESP_LOGW(TAG, "Unsupported PDO type: %d, assuming not compatible", pdo.type);
   return false;
 }
 
