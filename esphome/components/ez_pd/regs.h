@@ -14,6 +14,7 @@ constexpr uint16_t REG_CURRENT_PDO = 0x1010;
 constexpr uint16_t REG_CURRENT_RDO = 0x1410;
 
 constexpr uint16_t REG_INTERRUPT = 0x0600;
+// constexpr uint16_t REG_INTERRUPT = 0x0006;
 constexpr uint16_t REG_EVENT_MASK = 0x2410;
 constexpr uint16_t REG_EVENT_STATUS = 0x4410;
 // constexpr uint16_t REG_EVENT_STATUS = 0x3410;

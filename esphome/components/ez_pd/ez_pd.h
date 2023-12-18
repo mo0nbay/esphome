@@ -10,7 +10,11 @@ namespace esphome {
 namespace ez_pd {
 
 enum class State {
-  INITIALIZING,
+  INITIALIZING = 0x0,
+  REQUESTED_CAPS,
+  UPDATING_PDOS,
+  REQUESTED_PDO1,
+  REQUESTED_PDO,
   READY,
   FAILURE,
 };
@@ -29,6 +33,8 @@ class EZPD : public i2c::I2CDevice, public Component {
   }
 
  private:
+  State state_{State::INITIALIZING};
+
   PowerRequirement power_requirement_;
 
   float get_vbus_voltage_();
@@ -40,6 +46,7 @@ class EZPD : public i2c::I2CDevice, public Component {
   PDO get_current_pdo();
   bool process_interrupt();
 
+  bool handle_event_status(uint32_t event_status);
   bool handle_pd_response(uint32_t pd_response);
   bool handle_source_capabilities(uint8_t len);
   bool handle_pd_negotiation_complete(uint8_t len);
