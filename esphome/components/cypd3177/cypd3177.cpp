@@ -1,18 +1,18 @@
 #include "esphome/core/log.h"
 
-#include "ez_pd.h"
+#include "cypd3177.h"
 #include "pdo.h"
 #include "regs.h"
 
-// TODO: Use ESPHome's built-in bit manipulation functions?
+// TODO: Use ESPHome's built-in bit manipulation functions.
 #define HAS_BITS(v, b, n) (((v) >> (b)) & ((1 << (n)) - 1))
 #define HAS_BIT(v, b) (HAS_BITS(v, b, 1))
 #define SWAP16(v) ((((v) >> 8) & 0xff) | (((v) & 0xff) << 8))
 
 namespace esphome {
-namespace ez_pd {
+namespace cypd3177 {
 
-static const char *TAG = "ez_pd.component";
+static const char *TAG = "cypd3177.component";
 
 namespace {
 
@@ -87,9 +87,9 @@ void dump_rdo(uint32_t *rdo_data, const PDO *pdos) {
 
 }  // namespace
 
-void EZPD::setup() {
+void CYPD3177::setup() {
   // Dump config.
-  ESP_LOGCONFIG(TAG, "Initializing ez_pd component");
+  ESP_LOGCONFIG(TAG, "Initializing cypd3177 component");
   ESP_LOGI(TAG, "Power requirement: %d mV, %d mA", this->power_requirement_.voltage_mv,
            this->power_requirement_.current_ma);
 
@@ -137,16 +137,16 @@ void EZPD::setup() {
   state_ = State::REQUESTED_CAPS;
 }
 
-void EZPD::loop() {
+void CYPD3177::loop() {
   if (state_ == State::FAILURE) {
     return;
   }
   this->process_interrupt();
 }
 
-void EZPD::dump_config() { ESP_LOGCONFIG(TAG, "ez_pd component"); }
+void CYPD3177::dump_config() { ESP_LOGCONFIG(TAG, "cypd3177 component"); }
 
-float EZPD::get_vbus_voltage_() {
+float CYPD3177::get_vbus_voltage_() {
   uint8_t bus_voltage_dv;
   if (this->read_register16(REG_BUS_VOLTAGE, &bus_voltage_dv, 1)) {
     ESP_LOGE(TAG, "Failed to read bus voltage");
@@ -157,7 +157,7 @@ float EZPD::get_vbus_voltage_() {
   return bus_voltage;
 }
 
-PDO EZPD::get_current_pdo() {
+PDO CYPD3177::get_current_pdo() {
   // TODO: uint32_t.
   uint8_t pdo_bytes[4];
   if (this->read_register16(REG_CURRENT_PDO, pdo_bytes, sizeof(pdo_bytes))) {
@@ -179,9 +179,9 @@ PDO EZPD::get_current_pdo() {
 }
 
 // Interrupt callback.
-void EZPD::ISR(EZPD *instance) { instance->interrupt_pending_ = true; }
+void CYPD3177::ISR(CYPD3177 *instance) { instance->interrupt_pending_ = true; }
 
-bool EZPD::process_interrupt() {
+bool CYPD3177::process_interrupt() {
   // Read interrupt.
   uint8_t interrupt;
   if (this->read_register16(REG_INTERRUPT, &interrupt, 1)) {
@@ -224,9 +224,9 @@ bool EZPD::process_interrupt() {
   return true;
 }
 
-bool EZPD::handle_event_status(uint32_t event_status) { return true; }
+bool CYPD3177::handle_event_status(uint32_t event_status) { return true; }
 
-bool EZPD::handle_pd_response(uint32_t pd_response) {
+bool CYPD3177::handle_pd_response(uint32_t pd_response) {
   ESP_LOGD(TAG, "PD response: 0x%08X -- %s", pd_response, pd_response & (1 << 7) ? "ASYNC" : "CMD");
 
   // This seems weird. From the datasheet, we should do & 0x7f, but that doesn't work as some response codes are larger
@@ -278,20 +278,20 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
   }
 }
 
-bool EZPD::handle_source_capabilities(uint8_t len) {
+bool CYPD3177::handle_source_capabilities(uint8_t len) {
   ESP_LOGI(TAG, "Source capabilities received. Current state: %d", static_cast<int>(state_));
 
   uint8_t n_pdos = (len - 4) / 4;
   ESP_LOGD(TAG, "Number of PDOS: %d", n_pdos);
 
-  if (n_pdos > EZ_PD_MAX_PDOS) {
+  if (n_pdos > CYPD3177_MAX_PDOS) {
     ESP_LOGE(TAG, "Too many PDOS");
     return false;
   }
 
   ESP_LOGD(TAG, "Reading PD response data from memory");
 
-  uint8_t buff[4 * EZ_PD_MAX_PDOS + 4];
+  uint8_t buff[4 * CYPD3177_MAX_PDOS + 4];
   memset(buff, 0, sizeof(buff));
   for (uint8_t i = 0; i < len; i++) {
     if (this->read_register16(SWAP16(REG_READ_MEM_LO + i), &buff[i], 1)) {
@@ -354,7 +354,7 @@ bool EZPD::handle_source_capabilities(uint8_t len) {
 // REQUEST to learn how it works while I unsuccessfully tried to get a PPS request to work. Well, it did work, and I
 // verified with a logic analyzer that the request is sent correctly and the source responds with both an ACCEPT and
 // READY message. But CYPD3177 freaks out and issues a hard request upon the ACCEPT or RDY response for a PPS RDO :(.
-bool EZPD::request_selected_fixed_pdo() {
+bool CYPD3177::request_selected_fixed_pdo() {
   if (selected_pdo_idx_ == -1) {
     ESP_LOGE(TAG, "No suitable selected PDO -- aborting.");
     state_ = State::FAILURE;
@@ -396,7 +396,7 @@ bool EZPD::request_selected_fixed_pdo() {
   return true;
 }
 
-bool EZPD::handle_pd_negotiation_complete(uint8_t len) {
+bool CYPD3177::handle_pd_negotiation_complete(uint8_t len) {
   ESP_LOGI(TAG, "PD negotiation complete");
   uint8_t buff[8];
   if (len > sizeof(buff)) {
@@ -441,5 +441,5 @@ bool EZPD::handle_pd_negotiation_complete(uint8_t len) {
   return true;
 }
 
-}  // namespace ez_pd
+}  // namespace cypd3177
 }  // namespace esphome

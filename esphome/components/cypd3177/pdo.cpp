@@ -3,10 +3,10 @@
 
 #include <optional>
 
-static const char *TAG = "ez_pd.pdo";
+static const char *TAG = "cypd3177.pdo";
 
 namespace esphome {
-namespace ez_pd {
+namespace cypd3177 {
 
 PDO parse_pdo(uint32_t data) {
   PDO pdo;
@@ -72,5 +72,5 @@ void log_pdo(const PDO &pdo) {
   }
 }
 
-}  // namespace ez_pd
+}  // namespace cypd3177
 }  // namespace esphome

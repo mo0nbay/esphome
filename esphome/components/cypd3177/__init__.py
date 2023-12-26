@@ -9,13 +9,13 @@ DEPENDENCIES = ["i2c"]
 
 CONF_I2C_ADDR = 0x08
 
-ez_pd_ns = cg.esphome_ns.namespace("ez_pd")
-EZPD = ez_pd_ns.class_("EZPD", cg.Component, i2c.I2CDevice)
+cypd3177_ns = cg.esphome_ns.namespace("cypd3177")
+CYPD3177 = cypd3177_ns.class_("CYPD3177", cg.Component, i2c.I2CDevice)
 
 CONFIG_SCHEMA = (
     cv.Schema(
         {
-            cv.GenerateID(): cv.declare_id(EZPD),
+            cv.GenerateID(): cv.declare_id(CYPD3177),
             cv.Required(CONF_INTERRUPT_PIN): cv.All(
                 pins.internal_gpio_input_pin_schema
             ),

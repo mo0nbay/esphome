@@ -4,10 +4,10 @@
 #include "esphome/core/gpio.h"
 #include "esphome/components/i2c/i2c.h"
 
-#include "esphome/components/ez_pd/pdo.h"
+#include "esphome/components/cypd3177/pdo.h"
 
 namespace esphome {
-namespace ez_pd {
+namespace cypd3177 {
 
 enum class State {
   INITIALIZING = 0x0,
@@ -17,7 +17,7 @@ enum class State {
   FAILURE,
 };
 
-class EZPD : public i2c::I2CDevice, public Component {
+class CYPD3177 : public i2c::I2CDevice, public Component {
  public:
   void setup() override;
   void loop() override;
@@ -37,7 +37,7 @@ class EZPD : public i2c::I2CDevice, public Component {
   PowerRequirement power_requirement_;
 
   // PDOs received from the source.
-  PDO pdos_[EZ_PD_MAX_PDOS];
+  PDO pdos_[CYPD3177_MAX_PDOS];
 
   // The selected PDO that satisfies the power requirement. Index into pdos_, as we need to actually send an index as
   // part of the RDO.
@@ -59,8 +59,8 @@ class EZPD : public i2c::I2CDevice, public Component {
   bool request_selected_fixed_pdo();
 
   // Handles interrupts.
-  static void ISR(EZPD *instance);
+  static void ISR(CYPD3177 *instance);
 };
 
-}  // namespace ez_pd
+}  // namespace cypd3177
 }  // namespace esphome

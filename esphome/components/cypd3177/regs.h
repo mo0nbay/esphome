@@ -3,7 +3,7 @@
 #include <cstdint>
 
 namespace esphome {
-namespace ez_pd {
+namespace cypd3177 {
 
 // Returns 0x95 (datasheet says 0x92).
 constexpr uint16_t REG_DEVICE_MODE = 0x0000;
@@ -35,5 +35,5 @@ constexpr uint16_t REG_READ_MEM_LO = 0x1404;
 // 0x1800 to 0x19ff.
 constexpr uint16_t REG_WRITE_MEM_LO = 0x1800;
 
-}  // namespace ez_pd
+}  // namespace cypd3177
 }  // namespace esphome

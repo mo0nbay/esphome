@@ -1,9 +1,9 @@
 #pragma once
 
 namespace esphome {
-namespace ez_pd {
+namespace cypd3177 {
 
-#define EZ_PD_MAX_PDOS 7
+#define CYPD3177_MAX_PDOS 7
 
 // For PDO representation, see table 6.7 in the USB PD specs.
 struct PDO {
@@ -65,5 +65,5 @@ bool is_pdo_compatible(const PDO &pdo, const PowerRequirement &power_requirement
 
 void log_pdo(const PDO &pdo);
 
-}  // namespace ez_pd
+}  // namespace cypd3177
 }  // namespace esphome
