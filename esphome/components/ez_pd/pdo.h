@@ -3,6 +3,8 @@
 namespace esphome {
 namespace ez_pd {
 
+#define EZ_PD_MAX_PDOS 7
+
 // For PDO representation, see table 6.7 in the USB PD specs.
 struct PDO {
   enum class Type {

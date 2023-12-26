@@ -4,8 +4,6 @@
 #include "pdo.h"
 #include "regs.h"
 
-#define MAX_PDOS 7
-
 #define HAS_BITS(v, b, n) (((v) >> (b)) & ((1 << (n)) - 1))
 #define HAS_BIT(v, b) (HAS_BITS(v, b, 1))
 
@@ -114,35 +112,30 @@ void EZPD::setup() {
 
   // // Enable interrupt events.
   uint32_t event_mask = 0x00000000;
-  // event_mask |= (1 << 5);   // PD negotiation complete.
-  // event_mask |= (1 << 6);   // PD control message received.
-  // event_mask |= (1 << 8);   // Source capabilities received.
-  // event_mask |= (1 << 11);  // Errors.
-  // event_mask |= (1 << 17);  // Extended data message received.
-
-  // Unset bits 12...28.
-  // event_mask &= ~((1 << 17) - 1) << 12;
-
   // Set first 11 bits.
   event_mask |= ((1 << 12) - 1);
   event_mask |= (1 << 29);
   event_mask |= (1 << 30);
 
   if (this->write_register16(REG_EVENT_MASK, (uint8_t *) &event_mask, sizeof(event_mask))) {
-    ESP_LOGE(TAG, "Failed to write event mask");
+    // TODO: fatal.
+    ESP_LOGE(TAG, "Failed to write event mask. Aborting.");
+    return;
   }
 
   // // TODO: make interrupts work instead of polling.
   // // ISR(this);
 
-  // // TODO: maybe quickly check current PDO and quickly bail out if it's already compatible.
+  // Get capabilities. This will cause the PD contract to be renegotiated. We wait for a "negotiation
+  // complete" event to request the actual power we want.
+  uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
+  if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
+    // TODO: fatal.
+    ESP_LOGE(TAG, "Failed to write PD control to get capabilities. Aborting.");
+    return;
+  }
 
-  // // Get capabilities.
-  // // TODO: datasheet says it could trigger a power cycle.
-  // uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
-  // if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
-  //   ESP_LOGE(TAG, "Failed to write PD control");
-  // }
+  state_ = State::REQUESTED_CAPS;
 
   // uint32_t rdo;
   // if (this->read_register16(REG_CURRENT_RDO, (uint8_t *) &rdo, sizeof(rdo))) {
@@ -154,20 +147,20 @@ void EZPD::setup() {
 }
 
 void EZPD::loop() {
-  uint32_t event_status;
-  if (this->read_register16(REG_EVENT_STATUS, (uint8_t *) &event_status, sizeof(event_status))) {
-    ESP_LOGE(TAG, "Failed to read event status");
-  }
+  // uint32_t event_status;
+  // if (this->read_register16(REG_EVENT_STATUS, (uint8_t *) &event_status, sizeof(event_status))) {
+  //   ESP_LOGE(TAG, "Failed to read event status");
+  // }
 
-  if (event_status > 0) {
-    ESP_LOGI(TAG, "Event status: 0x%08X", event_status);
+  // if (event_status > 0) {
+  //   ESP_LOGI(TAG, "Event status: 0x%08X", event_status);
 
-    handle_event_status(event_status);
+  //   handle_event_status(event_status);
 
-    if (this->write_register16(REG_EVENT_STATUS, (uint8_t *) &event_status, sizeof(event_status))) {
-      ESP_LOGE(TAG, "Failed to clear event status");
-    }
-  }
+  //   if (this->write_register16(REG_EVENT_STATUS, (uint8_t *) &event_status, sizeof(event_status))) {
+  //     ESP_LOGE(TAG, "Failed to clear event status");
+  //   }
+  // }
 
   // if (this->interrupt_pending_) {
   this->process_interrupt();
@@ -207,7 +200,7 @@ PDO EZPD::get_current_pdo() {
     ESP_LOGE(TAG, "Failed to parse PDO");
     return PDO{};
   }
-  log_pdo(pdo);
+  // log_pdo(pdo);
   return pdo;
 }
 
@@ -250,7 +243,6 @@ bool EZPD::process_interrupt() {
   }
 
   // Clear interrupt.
-  // interrupt = 0xff;
   if (this->write_register16(REG_INTERRUPT, &interrupt, 1)) {
     ESP_LOGE(TAG, "Failed to clear interrupt");
     return false;
@@ -260,9 +252,14 @@ bool EZPD::process_interrupt() {
   return true;
 }
 
-bool EZPD::handle_event_status(uint32_t event_status) { return true; }
+bool EZPD::handle_event_status(uint32_t event_status) {
+  // ESP_LOGD(TAG, "Event status: %d", event_status);
+  // if (event_status & (1 << 2)) {
+  //   ESP_LOGD(TAG, "Initial power negotiation complete.");
+  // }
+  return true;
+}
 
-// TODO: break loop.
 bool EZPD::handle_pd_response(uint32_t pd_response) {
   ESP_LOGI(TAG, "PD response: 0x%08X", pd_response);
   ESP_LOGI(TAG, "PD response: %s", pd_response & (1 << 7) ? "ASYNC" : "CMD");
@@ -280,24 +277,24 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
       return true;
     case ResponseCode::SUCCESS:
       ESP_LOGI(TAG, "Success");
-      if (state_ == State::INITIALIZING) {
-        // Get PD status.
-        uint32_t pd_status;
-        if (this->read_register16(REG_PD_STATUS, (uint8_t *) &pd_status, sizeof(pd_status))) {
-          ESP_LOGE(TAG, "Failed to read PD status");
-          return false;
-        }
-        ESP_LOGI(TAG, "PD status: 0x%08X", pd_status);
-        dump_pd_status(pd_status);
+      // if (state_ == State::INITIALIZING) {
+      //   // Get PD status.
+      //   uint32_t pd_status;
+      //   if (this->read_register16(REG_PD_STATUS, (uint8_t *) &pd_status, sizeof(pd_status))) {
+      //     ESP_LOGE(TAG, "Failed to read PD status");
+      //     return false;
+      //   }
+      //   ESP_LOGI(TAG, "PD status: 0x%08X", pd_status);
+      //   dump_pd_status(pd_status);
 
-        // Request source capabilities.
-        uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
-        if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
-          ESP_LOGE(TAG, "Failed to write PD control");
-        }
-        state_ = State::REQUESTED_CAPS;
-      } else if (state_ == State::UPDATING_PDOS) {
-      }
+      //   // Request source capabilities.
+      //   uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
+      //   if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
+      //     ESP_LOGE(TAG, "Failed to write PD control");
+      //   }
+      //   state_ = State::REQUESTED_CAPS;
+      // } else if (state_ == State::UPDATING_PDOS) {
+      // }
       return true;
     case ResponseCode::INVALID_CMD:
       ESP_LOGI(TAG, "Invalid command");
@@ -337,28 +334,17 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
 bool EZPD::handle_source_capabilities(uint8_t len) {
   ESP_LOGI(TAG, "Source capabilities received. Current state: %d", static_cast<int>(state_));
 
-  // REMOVE
-  return true;
-
-  // PDO curr_pdo = get_current_pdo();
-  // if (is_pdo_compatible(curr_pdo, this->power_requirement_)) {
-  //   ESP_LOGI(TAG, "Current PDO is compatible, we're done here");
-  //   return false;
-  // }
-  // ESP_LOGI(TAG, "Current PDO is not compatible, requesting changes.");
-
   uint8_t n_pdos = (len - 4) / 4;
   ESP_LOGI(TAG, "Number of PDOS: %d", n_pdos);
 
-  if (n_pdos > MAX_PDOS) {
+  if (n_pdos > EZ_PD_MAX_PDOS) {
     ESP_LOGE(TAG, "Too many PDOS");
     return false;
   }
 
   ESP_LOGI(TAG, "Reading PD response data from memory");
 
-  // TODO: check bounds.
-  uint8_t buff[4 * MAX_PDOS + 4];
+  uint8_t buff[4 * EZ_PD_MAX_PDOS + 4];
   memset(buff, 0, sizeof(buff));
   for (uint8_t i = 0; i < len; i++) {
     if (this->read_register16(SWAP16(REG_READ_MEM_LO + i), &buff[i], 1)) {
@@ -367,173 +353,99 @@ bool EZPD::handle_source_capabilities(uint8_t len) {
     }
   }
 
-  // uint8_t selected_pdo_idx = 1;
-  // uint8_t select_sink_pdo = 1 << (selected_pdo_idx & 0x7);
-  if (state_ == State::REQUESTED_CAPS) {
-    ESP_LOGI(TAG, "State::REQUESTED_CAPS -- Writing PD response data to memory. Current state: %d (req_caps: %d)",
-             static_cast<int>(state_), static_cast<int>(State::REQUESTED_CAPS));
+  // Parse and store PDOs.
+  for (uint8_t i = 0; i < n_pdos; i++) {
+    uint32_t *pdo_data = (uint32_t *) &buff[i * 4 + 4];
+    pdos_[i] = parse_pdo(*pdo_data);
+    log_pdo(pdos_[i]);
+  }
 
-    // Write 7 bytes to memory.
-    for (uint8_t i = 0; i < len; i++) {
-      if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), &buff[i], 1)) {
-        ESP_LOGE(TAG, "Failed to write PD response data");
-        return false;
-      }
-    }
+  ESP_LOGI(TAG, "Writing PD response data to memory. Current state: %d (req_caps: %d)", static_cast<int>(state_),
+           static_cast<int>(State::REQUESTED_CAPS));
 
-    const uint8_t header[] = {0x50, 0x4B, 0x4E, 0x53};
-    for (uint8_t i = 0; i < sizeof(header); i++) {
-      if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), header + i, 1)) {
-        ESP_LOGE(TAG, "Failed to write PD response data");
-        return false;
-      }
-    }
-
-    uint8_t select_sink_pdo = 0x2;
-    if (this->write_register16(REG_SELECT_SINK_PDO, &select_sink_pdo, 1)) {
-      ESP_LOGE(TAG, "Failed to write select sink PDO");
+  // As per datasheet, to get ready for a power negotiation, we need to write the PD response data to memory.
+  for (uint8_t i = 0; i < len; i++) {
+    if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), &buff[i], 1)) {
+      ESP_LOGE(TAG, "Failed to write PD response data");
       return false;
     }
-    state_ = State::REQUESTED_PDO1;
   }
+
+  // As per datasheet, we write the required header "SNKP" to memory.
+  const uint8_t header[] = {0x50, 0x4B, 0x4E, 0x53};
+  for (uint8_t i = 0; i < sizeof(header); i++) {
+    if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), header + i, 1)) {
+      ESP_LOGE(TAG, "Failed to write PD response data");
+      return false;
+    }
+  }
+
+  // Can we find a suitable PDO?
+  selected_pdo_idx_ = -1;
+  for (int idx = 0; idx < n_pdos; idx++) {
+    const PDO *pdo = &pdos_[idx];
+    if (pdo->type == PDO::Type::FIXED && is_pdo_compatible(*pdo, this->power_requirement_)) {
+      selected_pdo_idx_ = idx;
+      break;
+    }
+  }
+
+  if (selected_pdo_idx_ == -1) {
+    // TODO: fatal.
+    ESP_LOGE(TAG, "No suitable fixed PDO found");
+    state_ = State::FAILURE;
+    return false;
+  }
+
+  ESP_LOGI(TAG, "Yay! Found suitable PDO:");
+  log_pdo(pdos_[selected_pdo_idx_]);
+
   return true;
-
-  // Update PDO list.
-  // ESP_LOGI(TAG, "Updating PDO list");
-  // uint8_t select_sink_pdo = (1 << (n_pdos + 1)) - 1;
-  // uint8_t select_sink_pdo = (1 << (n_pdos + 1)) - 1;
-  // uint8_t select_sink_pdo = (1 << 2);
-  // if (this->write_register16(REG_SELECT_SINK_PDO, &select_sink_pdo, 1)) {
-  //   ESP_LOGE(TAG, "Failed to write select sink PDO");
-  //   return false;
-  // }
-
-  // state_ = State::UPDATING_PDOS;
-  // return true;
-
-  // PDO pdos[MAX_PDOS];
-
-  // // As per spec, PDOs are ordered by voltage so we select the first one that's compatible.
-  // int selected_pdo_idx = -1;
-  // for (uint8_t i = 0; i < n_pdos; i++) {
-  //   uint32_t *pdo_data = (uint32_t *) &buff[i * 4 + 4];
-  //   pdos[i] = parse_pdo(*pdo_data);
-  //   log_pdo(pdos[i]);
-
-  //   if (selected_pdo_idx == -1 && is_pdo_compatible(pdos[i], this->power_requirement_)) {
-  //     selected_pdo_idx = i;
-  //     break;
-  //   }
-  // }
-
-  // REMOVE.
-  // return false;
-
-  // if (selected_pdo_idx == -1) {
-  //   ESP_LOGE(TAG, "No compatible PDO found");
-  //   return false;
-  // }
-
-  // ESP_LOGI(TAG, "Selected PDO:");
-  // log_pdo(pdos[selected_pdo_idx]);
-
-  // if (pdos[selected_pdo_idx].type == PDO::Type::AUGMENTED &&
-  //     pdos[selected_pdo_idx].augmented.type == PDO::Augmented::Type::SPR_PPS) {
-  //   // TODO: make this work.
-  //   // return select_pps_pdo(selected_pdo_idx);
-  // } else if (pdos[selected_pdo_idx].type == PDO::Type::FIXED) {
-  //   uint8_t select_sink_pdo = 1 << (selected_pdo_idx & 0x7);
-  //   if (this->write_register16(REG_SELECT_SINK_PDO, &select_sink_pdo, 1)) {
-  //     ESP_LOGE(TAG, "Failed to write select sink PDO");
-  //     return false;
-  //   }
-  //   return true;
-  // }
-
-  // ESP_LOGE(TAG, "No suitable PDOs found.");
-  // return false;
 }
 
-bool EZPD::select_pps_pdo(uint8_t pdo_idx) {
-  ESP_LOGI(TAG, "Selecting PPS PDO with index %d", pdo_idx);
+// We can probably just use the simpler SELECT_SINK_PDO register for this, but while I implemented this lower level
+// REQUEST to learn how it works while I unsuccessfully tried to get a PPS request to work. Well, it did work, and I
+// verified with a logic analyzer that the request is sent correctly and the source responds with both an ACCEPT and
+// READY message. But CYPD3177 freaks out and issues a hard request upon the ACCEPT or RDY response for a PPS RDO :(.
+bool EZPD::request_selected_fixed_pdo() {
+  if (selected_pdo_idx_ == -1) {
+    ESP_LOGE(TAG, "No suitable selected PDO -- aborting.");
+    state_ = State::FAILURE;
+    return false;
+  }
+
+  ESP_LOGI(TAG, "Requesting fixed PDO with index %d", selected_pdo_idx_);
 
   uint32_t request = 0;
 
-  // Object position.
-  request |= (((pdo_idx + 1) & 0x07) << 28);
-
-  // No USB suspend.
-  // request |= (0x1 << 24);
+  // Object position -- index + 1.
+  request |= (((selected_pdo_idx_ + 1) & 0x07) << 28);
 
   // USB communications capability.
   request |= (0x1 << 25);
 
+  // No USB suspend.
+  // request |= (0x1 << 24);
+
   // Unchunked message supported.
   request |= (0x1 << 23);
 
-  // Output voltage in 20 mV units.
-  uint32_t voltage_mv = (this->power_requirement_.voltage_mv) / 20;
-  // Set last two bits to zero
-  request |= (voltage_mv << 9);
+  uint32_t current_10ma = 150;
+  request |= (current_10ma << 10);
+  request |= current_10ma;
 
-  // Output current in 50 mA units.
-  uint16_t current_ma = (this->power_requirement_.current_ma) / 50;
-  request |= (current_ma & 0x7f);
-
-  ESP_LOGI(TAG, "Will send request: 0x%08X", request);
+  ESP_LOGI(TAG, "Will send RDO: 0x%08X", request);
   dump_rdo(&request);
-
-  // Get PD status.
-  uint32_t pd_status;
-  if (this->read_register16(REG_PD_STATUS, (uint8_t *) &pd_status, sizeof(pd_status))) {
-    ESP_LOGE(TAG, "Failed to read PD status");
-    return false;
-  }
-  ESP_LOGI(TAG, "PD status before: 0x%08X", pd_status);
-  dump_pd_status(pd_status);
 
   // Invert.
   request = byteswap(request);
   if (this->write_register16(REG_REQUEST, (uint8_t *) &request, sizeof(request))) {
-    ESP_LOGE(TAG, "Failed to write PD response");
+    // TODO: fatal.
+    ESP_LOGE(TAG, "Failed to write PD request");
     return false;
   }
 
-  // // Test 2 - use DM_CONTROL directly with hand crafted header.
-
-  // uint16_t header = 0x00;
-  // header |= (1 << 12);
-  // header |= 0x40;
-  // header |= (0x2 << 6);
-  // // Message type - request.
-  // header |= (0x82 & 0x1f);
-
-  // header = byteswap(header);
-
-  // // Copy header.
-  // for (uint8_t i = 0; i < 2; i++) {
-  //   if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + i), (uint8_t *) &header + i, 1)) {
-  //     ESP_LOGE(TAG, "Failed to write PD response data");
-  //     return false;
-  //   }
-  // }
-
-  // // Copy request to memory.
-  // uint8_t *request_bytes = (uint8_t *) &request;
-  // for (uint8_t i = 0; i < 4; i++) {
-  //   if (this->write_register16(SWAP16(REG_WRITE_MEM_LO + sizeof(header) + i), &request_bytes[i], 1)) {
-  //     ESP_LOGE(TAG, "Failed to write PD response data");
-  //     return false;
-  //   }
-  // }
-
-  // uint16_t dm_control = 0x0000 | (1 << 8);
-  // // dm_control = SWAP16(dm_control);
-  // if (this->write_register16(REG_DM_CONTROL, (uint8_t *) &dm_control, sizeof(dm_control))) {
-  //   ESP_LOGE(TAG, "Failed to write DM control");
-  //   return false;
-  // }
-
+  state_ = State::REQUESTED_PDO;
   return true;
 }
 
@@ -541,7 +453,7 @@ bool EZPD::handle_pd_negotiation_complete(uint8_t len) {
   ESP_LOGI(TAG, "PD negotiation complete");
   uint8_t buff[8];
   if (len > sizeof(buff)) {
-    ESP_LOGE(TAG, "PD negotiation complete response is too long");
+    ESP_LOGE(TAG, "PD negotiation complete -- response is too long");
     return false;
   }
 
@@ -558,24 +470,18 @@ bool EZPD::handle_pd_negotiation_complete(uint8_t len) {
   }
 
   uint32_t *rdo_data = (uint32_t *) &buff[4];
-  ESP_LOGI(TAG, "%s, %s. Sent RDO: 0x%08X", buff[0] & 0x1 ? "Success" : "Failure",
-           buff[0] & 0x2 ? "Cap. mismatch" : "No cap. mismatch", *rdo_data);
   dump_rdo(rdo_data);
 
   PDO curr_pdo = get_current_pdo();
   ESP_LOGI(TAG, "Current PDO:");
   log_pdo(curr_pdo);
 
-  // if (state_ == State::REQUESTED_PDO1) {
-  //   ESP_LOGI(TAG, "Will request PPS PDO");
-  //   // Request PDO.
-  //   select_pps_pdo(5);
-  //   state_ = State::REQUESTED_PDO;
-  // }
-
-  // if (state_ == State::REQUESTED_CAPS) {
-  //   // Will update PDOs.
-  // }
+  if (state_ == State::REQUESTED_CAPS) {
+    return request_selected_fixed_pdo();
+  } else if (state_ == State::REQUESTED_PDO) {
+    ESP_LOGI(TAG, "Yay! We got the power we wanted!");
+    state_ = State::READY;
+  }
 
   return true;
 }
