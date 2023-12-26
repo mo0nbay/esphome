@@ -4,9 +4,9 @@
 #include "pdo.h"
 #include "regs.h"
 
+// TODO: Use ESPHome's built-in bit manipulation functions?
 #define HAS_BITS(v, b, n) (((v) >> (b)) & ((1 << (n)) - 1))
 #define HAS_BIT(v, b) (HAS_BITS(v, b, 1))
-
 #define SWAP16(v) ((((v) >> 8) & 0xff) | (((v) & 0xff) << 8))
 
 namespace esphome {
@@ -15,8 +15,6 @@ namespace ez_pd {
 static const char *TAG = "ez_pd.component";
 
 namespace {
-
-bool done = false;
 
 enum class ResponseCode : uint8_t {
   NO_RESPONSE = 0x00,
@@ -34,20 +32,21 @@ enum class ResponseCode : uint8_t {
 };
 
 void dump_pd_status(uint32_t pd_status) {
-  ESP_LOGI(TAG, "PD status: 0x%08X", pd_status);
-  ESP_LOGI(TAG, "- Current port data role: %s", HAS_BIT(pd_status, 6) == 0 ? "UFP" : "DFP");
-  ESP_LOGI(TAG, "- Current port power role: %s", HAS_BIT(pd_status, 8) == 0 ? "Sink" : "INVALID");
-  ESP_LOGI(TAG, "- Contract state: %s", HAS_BIT(pd_status, 10) == 0 ? "No contract" : "Exists");
-  ESP_LOGI(TAG, "- Sink TX: %s", HAS_BIT(pd_status, 14) == 0 ? "Ready" : "Not ready");
-  ESP_LOGI(TAG, "- Policy engine state: %s", HAS_BIT(pd_status, 15) == 0 ? "Not ready" : "Ready");
-  ESP_LOGI(TAG, "- PD spec revision in BCR: %s", HAS_BIT(pd_status, 16) == 0 ? "2.0" : "3.0");
-  ESP_LOGI(TAG, "- PD spec revision in Partner: %s", HAS_BIT(pd_status, 18) == 0 ? "2.0" : "3.0");
+  ESP_LOGD(TAG, "PD status: 0x%08X", pd_status);
+  ESP_LOGD(TAG, "- Current port data role: %s", HAS_BIT(pd_status, 6) == 0 ? "UFP" : "DFP");
+  ESP_LOGD(TAG, "- Current port power role: %s", HAS_BIT(pd_status, 8) == 0 ? "Sink" : "INVALID");
+  ESP_LOGD(TAG, "- Contract state: %s", HAS_BIT(pd_status, 10) == 0 ? "No contract" : "Exists");
+  ESP_LOGD(TAG, "- Sink TX: %s", HAS_BIT(pd_status, 14) == 0 ? "Ready" : "Not ready");
+  ESP_LOGD(TAG, "- Policy engine state: %s", HAS_BIT(pd_status, 15) == 0 ? "Not ready" : "Ready");
+  ESP_LOGD(TAG, "- PD spec revision in BCR: %s", HAS_BIT(pd_status, 16) == 0 ? "2.0" : "3.0");
+  ESP_LOGD(TAG, "- PD spec revision in Partner: %s", HAS_BIT(pd_status, 18) == 0 ? "2.0" : "3.0");
 }
 
-void dump_rdo(uint32_t *rdo_data) {
+void dump_rdo(uint32_t *rdo_data, const PDO *pdos) {
   uint8_t obj_pos = (*rdo_data >> 28) & 0x7;
+  uint8_t pdo_idx = obj_pos - 1;
 
-  if (obj_pos <= 5) {
+  if (pdos[pdo_idx].type == PDO::Type::FIXED) {
     uint8_t give_back_flag = (*rdo_data >> 27) & 0x1;
     uint8_t cap_mis = (*rdo_data >> 26) & 0x1;
     uint8_t usb_cap = (*rdo_data >> 25) & 0x1;
@@ -57,13 +56,14 @@ void dump_rdo(uint32_t *rdo_data) {
     uint16_t curr_ma = (*rdo_data >> 10) & ((1 << 11) - 1);
     uint16_t max_curr_ma = (*rdo_data >> 0) & ((1 << 11) - 1);
 
-    ESP_LOGI(TAG,
+    ESP_LOGD(TAG,
              "FIXED Object position: %d, give back flag: %d, cap mismatch: %d, USB cap: %d, no USB suspend: %d, "
              "unchunked msg sup: %d, EPR cap: %d, current: %d mA, max current: %d mA",
              obj_pos, give_back_flag, cap_mis, usb_cap, no_usb_sus, unchunked_msg_sup, epr_cap, curr_ma * 10,
              max_curr_ma * 10);
-  } else {
-    // Assume PPS for testing.
+    return;
+  } else if (pdos[pdo_idx].type == PDO::Type::AUGMENTED &&
+             pdos[pdo_idx].augmented.type == PDO::Augmented::Type::SPR_PPS) {
     uint8_t should_be_zero1 = (*rdo_data >> 27) & 0x1;
     uint8_t cap_mis = (*rdo_data >> 26) & 0x1;
     uint8_t usb_cap = (*rdo_data >> 25) & 0x1;
@@ -75,17 +75,21 @@ void dump_rdo(uint32_t *rdo_data) {
     uint8_t should_be_zero3 = (*rdo_data >> 7) & ((1 << 3) - 1);
     uint16_t current = (*rdo_data >> 0) & ((1 << 8) - 1);
 
-    ESP_LOGI(TAG,
+    ESP_LOGD(TAG,
              "PPS Object position: %d, cap mismatch: %d, USB cap: %d, no USB suspend: %d, unchunked msg sup: %d, "
              "EPR cap: %d, voltage: %d mV, current: %d mA, should be zero: %d %d %d",
              obj_pos, cap_mis, usb_cap, no_usb_sus, unchunked_msg_sup, epr_cap, voltage * 20, current * 50,
              should_be_zero1, should_be_zero2, should_be_zero3);
+    return;
   }
+  ESP_LOGW(TAG, "Unsupported RDO type: 0x%08X (PDO position %d)", *rdo_data, obj_pos);
 }
 
 }  // namespace
 
 void EZPD::setup() {
+  // Dump config.
+  ESP_LOGCONFIG(TAG, "Initializing ez_pd component");
   ESP_LOGI(TAG, "Power requirement: %d mV, %d mA", this->power_requirement_.voltage_mv,
            this->power_requirement_.current_ma);
 
@@ -96,19 +100,12 @@ void EZPD::setup() {
 
   this->int_pin_->attach_interrupt(ISR, this, gpio::INTERRUPT_FALLING_EDGE);
 
-  // uint8_t device_mode;
-  // if (this->read_register16(REG_DEVICE_MODE, &device_mode, 1, true)) {
-  //   ESP_LOGE(TAG, "Failed to read device mode");
-  // } else {
-  //   ESP_LOGI(TAG, "Device mode: 0x%02X", device_mode);
-  // }
-
-  // uint16_t device_id;
-  // if (this->read_register16(REG_SILICON_ID, (uint8_t *) &device_id, 2, false)) {
-  //   ESP_LOGE(TAG, "Failed to read device id");
-  // } else {
-  //   ESP_LOGI(TAG, "Device id: 0x%04X", device_id);
-  // }
+  uint16_t device_id;
+  if (this->read_register16(REG_SILICON_ID, (uint8_t *) &device_id, 2, false)) {
+    ESP_LOGE(TAG, "Failed to read device id");
+  } else {
+    ESP_LOGV(TAG, "Device id: 0x%04X", device_id);
+  }
 
   // // Enable interrupt events.
   uint32_t event_mask = 0x00000000;
@@ -120,11 +117,12 @@ void EZPD::setup() {
   if (this->write_register16(REG_EVENT_MASK, (uint8_t *) &event_mask, sizeof(event_mask))) {
     // TODO: fatal.
     ESP_LOGE(TAG, "Failed to write event mask. Aborting.");
+    state_ = State::FAILURE;
     return;
   }
 
-  // // TODO: make interrupts work instead of polling.
-  // // ISR(this);
+  // TODO: make interrupts work instead of polling.
+  // ISR(this);
 
   // Get capabilities. This will cause the PD contract to be renegotiated. We wait for a "negotiation
   // complete" event to request the actual power we want.
@@ -132,41 +130,18 @@ void EZPD::setup() {
   if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
     // TODO: fatal.
     ESP_LOGE(TAG, "Failed to write PD control to get capabilities. Aborting.");
+    state_ = State::FAILURE;
     return;
   }
 
   state_ = State::REQUESTED_CAPS;
-
-  // uint32_t rdo;
-  // if (this->read_register16(REG_CURRENT_RDO, (uint8_t *) &rdo, sizeof(rdo))) {
-  //   ESP_LOGE(TAG, "Failed to read RDO");
-  // } else {
-  //   ESP_LOGI(TAG, "Initial RDO: 0x%08X", rdo);
-  //   dump_rdo(&rdo);
-  // }
 }
 
 void EZPD::loop() {
-  // uint32_t event_status;
-  // if (this->read_register16(REG_EVENT_STATUS, (uint8_t *) &event_status, sizeof(event_status))) {
-  //   ESP_LOGE(TAG, "Failed to read event status");
-  // }
-
-  // if (event_status > 0) {
-  //   ESP_LOGI(TAG, "Event status: 0x%08X", event_status);
-
-  //   handle_event_status(event_status);
-
-  //   if (this->write_register16(REG_EVENT_STATUS, (uint8_t *) &event_status, sizeof(event_status))) {
-  //     ESP_LOGE(TAG, "Failed to clear event status");
-  //   }
-  // }
-
-  // if (this->interrupt_pending_) {
+  if (state_ == State::FAILURE) {
+    return;
+  }
   this->process_interrupt();
-  // }
-
-  // ESP_LOGI(TAG, "State: %d", static_cast<int>(state_));
 }
 
 void EZPD::dump_config() { ESP_LOGCONFIG(TAG, "ez_pd component"); }
@@ -200,7 +175,6 @@ PDO EZPD::get_current_pdo() {
     ESP_LOGE(TAG, "Failed to parse PDO");
     return PDO{};
   }
-  // log_pdo(pdo);
   return pdo;
 }
 
@@ -208,8 +182,6 @@ PDO EZPD::get_current_pdo() {
 void EZPD::ISR(EZPD *instance) { instance->interrupt_pending_ = true; }
 
 bool EZPD::process_interrupt() {
-  // ESP_LOGI(TAG, "Processing interrupt");
-
   // Read interrupt.
   uint8_t interrupt;
   if (this->read_register16(REG_INTERRUPT, &interrupt, 1)) {
@@ -221,19 +193,19 @@ bool EZPD::process_interrupt() {
     // ESP_LOGE(TAG, "Interrupt is not actually set");
     return false;
   }
-  ESP_LOGI(TAG, "Interrupt: 0x%02X", interrupt);
+  ESP_LOGD(TAG, "Interrupt: 0x%02X", interrupt);
 
   if (interrupt & 0x1) {
-    ESP_LOGI(TAG, "Device interrupt");
+    ESP_LOGD(TAG, "Device interrupt");
     uint16_t dev_response;
     if (this->read_register16(REG_DEV_RESPONSE, (uint8_t *) &dev_response, sizeof(dev_response))) {
       ESP_LOGE(TAG, "Failed to read DEV_RESPONSE");
     } else {
-      ESP_LOGI(TAG, "Device response: 0x%04X", dev_response);
+      ESP_LOGD(TAG, "Device response: 0x%04X", dev_response);
     }
   }
   if (interrupt & 0x2) {
-    ESP_LOGI(TAG, "PD port interrupt");
+    ESP_LOGD(TAG, "PD port interrupt");
     uint32_t pd_response;
     if (this->read_register16(REG_PD_RESPONSE, (uint8_t *) &pd_response, sizeof(pd_response))) {
       ESP_LOGE(TAG, "Failed to read PD_RESPONSE");
@@ -252,52 +224,27 @@ bool EZPD::process_interrupt() {
   return true;
 }
 
-bool EZPD::handle_event_status(uint32_t event_status) {
-  // ESP_LOGD(TAG, "Event status: %d", event_status);
-  // if (event_status & (1 << 2)) {
-  //   ESP_LOGD(TAG, "Initial power negotiation complete.");
-  // }
-  return true;
-}
+bool EZPD::handle_event_status(uint32_t event_status) { return true; }
 
 bool EZPD::handle_pd_response(uint32_t pd_response) {
-  ESP_LOGI(TAG, "PD response: 0x%08X", pd_response);
-  ESP_LOGI(TAG, "PD response: %s", pd_response & (1 << 7) ? "ASYNC" : "CMD");
+  ESP_LOGD(TAG, "PD response: 0x%08X -- %s", pd_response, pd_response & (1 << 7) ? "ASYNC" : "CMD");
 
-  // This seems weird. From the datasheet, we should do & 0x7f, but that doesn't work.
-  // Doing & 0xff yields the expected results.
+  // This seems weird. From the datasheet, we should do & 0x7f, but that doesn't work as some response codes are larger
+  // than 0x7f. The response type is likely included in the code, making it 0xff.
   ResponseCode code = static_cast<ResponseCode>(pd_response & 0xff);
   // TODO: longer responses are possible.
   uint8_t len = (pd_response >> 8) & 0xff;
-  // ESP_LOGI(TAG, "PD response code: 0x%02X, len: 0x%02X", code, len);
+  ESP_LOGD(TAG, "PD response code: 0x%02X, len: 0x%02X", code, len);
 
   switch (code) {
     case ResponseCode::NO_RESPONSE:
       ESP_LOGE(TAG, "No response");
       return true;
     case ResponseCode::SUCCESS:
-      ESP_LOGI(TAG, "Success");
-      // if (state_ == State::INITIALIZING) {
-      //   // Get PD status.
-      //   uint32_t pd_status;
-      //   if (this->read_register16(REG_PD_STATUS, (uint8_t *) &pd_status, sizeof(pd_status))) {
-      //     ESP_LOGE(TAG, "Failed to read PD status");
-      //     return false;
-      //   }
-      //   ESP_LOGI(TAG, "PD status: 0x%08X", pd_status);
-      //   dump_pd_status(pd_status);
-
-      //   // Request source capabilities.
-      //   uint8_t pd_control = 0x0a;  // Send Get_Source_Cap.
-      //   if (this->write_register16(REG_PD_CONTROL, &pd_control, 1)) {
-      //     ESP_LOGE(TAG, "Failed to write PD control");
-      //   }
-      //   state_ = State::REQUESTED_CAPS;
-      // } else if (state_ == State::UPDATING_PDOS) {
-      // }
+      ESP_LOGD(TAG, "Success");
       return true;
     case ResponseCode::INVALID_CMD:
-      ESP_LOGI(TAG, "Invalid command");
+      ESP_LOGD(TAG, "Invalid command");
       return true;
     case ResponseCode::NOT_SUPPORTED:
       ESP_LOGE(TAG, "Not supported");
@@ -309,12 +256,12 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
       ESP_LOGE(TAG, "PD command failed");
       return true;
     case ResponseCode::PS_READY:
-      ESP_LOGI(TAG, "PS ready");
+      ESP_LOGD(TAG, "PS ready");
       return true;
     case ResponseCode::PD_NEGOTIATION_COMPLETE:
       return handle_pd_negotiation_complete(len);
     case ResponseCode::ACCEPT_MSG_RECEIVED:
-      ESP_LOGI(TAG, "Accept message received");
+      ESP_LOGD(TAG, "Accept message received");
       return true;
     case ResponseCode::REJECT_MSG_RECEIVED:
       ESP_LOGE(TAG, "Reject message received");
@@ -325,7 +272,7 @@ bool EZPD::handle_pd_response(uint32_t pd_response) {
       ESP_LOGE(TAG, "Type C error recovery");
       return true;
     default:
-      ESP_LOGI(TAG, "Unhandled response code to %s: 0x%02X (full: 0x%08X)", pd_response & (0x1 << 7) ? "ASYNC" : "CMD",
+      ESP_LOGD(TAG, "Unhandled response code to %s: 0x%02X (full: 0x%08X)", pd_response & (0x1 << 7) ? "ASYNC" : "CMD",
                code, pd_response);
       return false;
   }
@@ -335,14 +282,14 @@ bool EZPD::handle_source_capabilities(uint8_t len) {
   ESP_LOGI(TAG, "Source capabilities received. Current state: %d", static_cast<int>(state_));
 
   uint8_t n_pdos = (len - 4) / 4;
-  ESP_LOGI(TAG, "Number of PDOS: %d", n_pdos);
+  ESP_LOGD(TAG, "Number of PDOS: %d", n_pdos);
 
   if (n_pdos > EZ_PD_MAX_PDOS) {
     ESP_LOGE(TAG, "Too many PDOS");
     return false;
   }
 
-  ESP_LOGI(TAG, "Reading PD response data from memory");
+  ESP_LOGD(TAG, "Reading PD response data from memory");
 
   uint8_t buff[4 * EZ_PD_MAX_PDOS + 4];
   memset(buff, 0, sizeof(buff));
@@ -360,7 +307,7 @@ bool EZPD::handle_source_capabilities(uint8_t len) {
     log_pdo(pdos_[i]);
   }
 
-  ESP_LOGI(TAG, "Writing PD response data to memory. Current state: %d (req_caps: %d)", static_cast<int>(state_),
+  ESP_LOGD(TAG, "Writing PD response data to memory. Current state: %d (req_caps: %d)", static_cast<int>(state_),
            static_cast<int>(State::REQUESTED_CAPS));
 
   // As per datasheet, to get ready for a power negotiation, we need to write the PD response data to memory.
@@ -397,7 +344,7 @@ bool EZPD::handle_source_capabilities(uint8_t len) {
     return false;
   }
 
-  ESP_LOGI(TAG, "Yay! Found suitable PDO:");
+  ESP_LOGI(TAG, "Now we're cooking! Found suitable PDO:");
   log_pdo(pdos_[selected_pdo_idx_]);
 
   return true;
@@ -414,7 +361,7 @@ bool EZPD::request_selected_fixed_pdo() {
     return false;
   }
 
-  ESP_LOGI(TAG, "Requesting fixed PDO with index %d", selected_pdo_idx_);
+  ESP_LOGD(TAG, "Requesting fixed PDO with index %d", selected_pdo_idx_);
 
   uint32_t request = 0;
 
@@ -434,8 +381,8 @@ bool EZPD::request_selected_fixed_pdo() {
   request |= (current_10ma << 10);
   request |= current_10ma;
 
-  ESP_LOGI(TAG, "Will send RDO: 0x%08X", request);
-  dump_rdo(&request);
+  ESP_LOGV(TAG, "Will send RDO: 0x%08X", request);
+  dump_rdo(&request, pdos_);
 
   // Invert.
   request = byteswap(request);
@@ -466,20 +413,28 @@ bool EZPD::handle_pd_negotiation_complete(uint8_t len) {
   }
 
   if ((buff[0] & 0x1) == 0) {
-    ESP_LOGI(TAG, "Reason for failure: 0x%02X", buff[0] >> 2 & 0x3);
+    ESP_LOGW(TAG, "Reason for pd negotiation failure: 0x%02X", buff[0] >> 2 & 0x3);
   }
 
   uint32_t *rdo_data = (uint32_t *) &buff[4];
-  dump_rdo(rdo_data);
+  ESP_LOGV(TAG, "Used request (RDO):");
+  dump_rdo(rdo_data, pdos_);
 
-  PDO curr_pdo = get_current_pdo();
-  ESP_LOGI(TAG, "Current PDO:");
+  const PDO curr_pdo = get_current_pdo();
+  ESP_LOGV(TAG, "Currently active power delivery object (PDO):");
   log_pdo(curr_pdo);
+
+  if (curr_pdo.type != PDO::Type::FIXED) {
+    ESP_LOGE(TAG, "Currently active PDO is not fixed -- something is very fishy. Aborting.");
+    state_ = State::FAILURE;
+    return false;
+  }
 
   if (state_ == State::REQUESTED_CAPS) {
     return request_selected_fixed_pdo();
   } else if (state_ == State::REQUESTED_PDO) {
-    ESP_LOGI(TAG, "Yay! We got the power we wanted!");
+    int available_power = curr_pdo.fixed.max_current_ma * curr_pdo.fixed.voltage_mv / (1000 * 1000);
+    ESP_LOGI(TAG, "Done. We got the power we wanted! Responsibly enjoy them %d Watts!!", available_power);
     state_ = State::READY;
   }
 
