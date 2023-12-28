@@ -3,7 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/gpio.h"
 #include "esphome/components/i2c/i2c.h"
-
+#include "esphome/components/sensor/sensor.h"
 #include "esphome/components/cypd3177/pdo.h"
 
 namespace esphome {
@@ -17,10 +17,11 @@ enum class State {
   FAILURE,
 };
 
-class CYPD3177 : public i2c::I2CDevice, public Component {
+class CYPD3177 : public i2c::I2CDevice, public PollingComponent {
  public:
   void setup() override;
   void loop() override;
+  void update() override;
   void dump_config() override;
 
   void set_interrupt_pin(InternalGPIOPin *int_pin) { this->int_pin_ = int_pin; }
@@ -28,6 +29,10 @@ class CYPD3177 : public i2c::I2CDevice, public Component {
   void set_power_requirement(uint16_t voltage_mv, uint16_t current_ma) {
     this->power_requirement_.voltage_mv = voltage_mv;
     this->power_requirement_.current_ma = current_ma;
+  }
+
+  void set_vbus_voltage_sensor(sensor::Sensor *vbus_voltage_sensor) {
+    this->vbus_voltage_sensor_ = vbus_voltage_sensor;
   }
 
  private:
@@ -43,15 +48,14 @@ class CYPD3177 : public i2c::I2CDevice, public Component {
   // part of the RDO.
   int selected_pdo_idx_{-1};
 
-  float get_vbus_voltage_();
   // Interrupt pin.
   InternalGPIOPin *int_pin_{nullptr};
   bool interrupt_pending_{false};
 
   // Methods.
-  PDO get_current_pdo();
   bool process_interrupt();
-
+  PDO get_current_pdo();
+  float get_vbus_voltage();
   bool handle_event_status(uint32_t event_status);
   bool handle_pd_response(uint32_t pd_response);
   bool handle_source_capabilities(uint8_t len);
@@ -60,6 +64,8 @@ class CYPD3177 : public i2c::I2CDevice, public Component {
 
   // Handles interrupts.
   static void ISR(CYPD3177 *instance);
+
+  sensor::Sensor *vbus_voltage_sensor_{nullptr};
 };
 
 }  // namespace cypd3177

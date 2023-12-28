@@ -1,8 +1,11 @@
-#include "esphome/core/log.h"
+#include "esphome/components/cypd3177/cypd3177.h"
 
-#include "cypd3177.h"
-#include "pdo.h"
-#include "regs.h"
+// #include "cypd3177.h"
+// #include "pdo.h"
+// #include "regs.h"
+#include "esphome/core/log.h"
+#include "esphome/components/cypd3177/pdo.h"
+#include "esphome/components/cypd3177/regs.h"
 
 // TODO: Use ESPHome's built-in bit manipulation functions.
 #define HAS_BITS(v, b, n) (((v) >> (b)) & ((1 << (n)) - 1))
@@ -144,9 +147,23 @@ void CYPD3177::loop() {
   this->process_interrupt();
 }
 
-void CYPD3177::dump_config() { ESP_LOGCONFIG(TAG, "cypd3177 component"); }
+void CYPD3177::update() {
+  if (state_ == State::FAILURE) {
+    return;
+  }
 
-float CYPD3177::get_vbus_voltage_() {
+  float vbus_voltage = this->get_vbus_voltage();
+  if (vbus_voltage > 0.0f && this->vbus_voltage_sensor_ != nullptr) {
+    this->vbus_voltage_sensor_->publish_state(vbus_voltage);
+  }
+}
+
+void CYPD3177::dump_config() {
+  ESP_LOGCONFIG(TAG, "cypd3177");
+  LOG_UPDATE_INTERVAL(this);
+}
+
+float CYPD3177::get_vbus_voltage() {
   uint8_t bus_voltage_dv;
   if (this->read_register16(REG_BUS_VOLTAGE, &bus_voltage_dv, 1)) {
     ESP_LOGE(TAG, "Failed to read bus voltage");
