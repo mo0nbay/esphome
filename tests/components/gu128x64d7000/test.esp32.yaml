@@ -1,0 +1,31 @@
+esphome:
+  name: gu128x64d7000-test
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+uart:
+  tx_pin:
+    number: GPIO19
+    inverted: true
+  rx_pin:
+    number: GPIO18
+    inverted: true
+  baud_rate: 115200
+
+font:
+  - file: "gfonts://Roboto"
+    id: roboto_16
+    size: 16
+
+display:
+  - platform: gu128x64d7000
+    reset_pin: GPIO0
+    busy_pin: GPIO1
+    update_interval: 1s
+    lambda: |-
+      it.print(0, 0, id(roboto_16), "Hello World!");
+      it.line(0, 40, 127, 40);
+      it.rectangle(0, 45, 128, 19);
