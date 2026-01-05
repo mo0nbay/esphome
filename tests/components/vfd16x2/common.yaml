@@ -1,0 +1,4 @@
+vfd16x2:
+  id: my_vfd
+  cs_pin: ${cs_pin}
+  n_reset_pin: ${reset_pin}
