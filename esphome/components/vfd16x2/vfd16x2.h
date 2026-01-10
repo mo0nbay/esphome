@@ -29,6 +29,7 @@ class VFD16X2 : public PollingComponent,
 
   void clear();
   void set_brightness(uint8_t brightness);
+  void on_off(bool state);
 
   void update() override;
 

@@ -89,8 +89,9 @@ void VFD16X2::printf(uint8_t column, uint8_t row, const char *format, ...) {
   char buffer[16 + 1];
   int ret = vsnprintf(buffer, sizeof(buffer), format, arg);
   va_end(arg);
-  if (ret > 0)
+  if (ret > 0) {
     this->print(column, row, buffer);
+  }
 }
 
 void VFD16X2::clear() {
@@ -115,6 +116,12 @@ void VFD16X2::set_brightness(uint8_t brightness) {
 void VFD16X2::update() {
   // this->clear();
   this->writer_(*this);
+}
+
+void VFD16X2::on_off(bool state) {
+  this->enable();
+  this->write_byte(state ? 0x70 : 0x71);
+  this->disable();
 }
 
 }  // namespace vfd16x2
