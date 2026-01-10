@@ -22,6 +22,8 @@ class VFD16X2 : public PollingComponent,
 
   void set_n_reset_pin(GPIOPin *n_reset_pin) { this->n_reset_pin_ = n_reset_pin; }
 
+  void store_custom_char(uint8_t location, const uint8_t cols_bitmap[5]);
+
   void print(uint8_t column, uint8_t row, const char *str);
   void printf(uint8_t column, uint8_t row, const char *format, ...) __attribute__((format(printf, 4, 5)));
 
