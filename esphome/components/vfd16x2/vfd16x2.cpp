@@ -66,6 +66,16 @@ void VFD16X2::print(uint8_t column, uint8_t row, const char *str) {
   this->disable();
 }
 
+void VFD16X2::printf(uint8_t column, uint8_t row, const char *format, ...) {
+  va_list arg;
+  va_start(arg, format);
+  char buffer[16 + 1];
+  int ret = vsnprintf(buffer, sizeof(buffer), format, arg);
+  va_end(arg);
+  if (ret > 0)
+    this->print(column, row, buffer);
+}
+
 void VFD16X2::clear() {
   for (uint8_t row = 0; row < ROWS; row++) {
     this->enable();
@@ -83,6 +93,11 @@ void VFD16X2::set_brightness(uint8_t brightness) {
   this->write_byte(CMD_SET_BRIGHTNESS);
   this->write_byte(brightness);
   this->disable();
+}
+
+void VFD16X2::update() {
+  // this->clear();
+  this->writer_(*this);
 }
 
 }  // namespace vfd16x2
