@@ -47,13 +47,13 @@ void VFD16X2::dump_config() {
   LOG_PIN("  N_RESET Pin: ", this->n_reset_pin_);
 }
 
-void VFD16X2::store_custom_char(uint8_t pos, uint8_t location, const uint8_t cols_bitmap[5]) {
+void VFD16X2::store_custom_char(uint8_t bank, uint8_t location, const uint8_t cols_bitmap[5]) {
   if (location > 15) {
     ESP_LOGE(TAG, "Custom character location must be between 0 and 15");
     return;
   }
   this->enable();
-  this->write_byte(0x20 | (pos << 7));
+  this->write_byte(0x20 | (bank << 7));
   this->write_byte(location);
   for (uint8_t i = 0; i < 5; i++) {
     this->write_byte(cols_bitmap[i]);
