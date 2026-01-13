@@ -48,6 +48,10 @@ void VFD16X2::dump_config() {
 }
 
 void VFD16X2::store_custom_char(uint8_t bank, uint8_t location, const uint8_t cols_bitmap[5]) {
+  if (bank > 1) {
+    ESP_LOGE(TAG, "Custom character bank must be 0 or 1");
+    return;
+  }
   if (location > 15) {
     ESP_LOGE(TAG, "Custom character location must be between 0 and 15");
     return;
