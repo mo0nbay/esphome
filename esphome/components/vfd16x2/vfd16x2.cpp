@@ -47,21 +47,37 @@ void VFD16X2::dump_config() {
   LOG_PIN("  N_RESET Pin: ", this->n_reset_pin_);
 }
 
-void VFD16X2::store_custom_char(uint8_t location, const uint8_t cols_bitmap[5]) {
+void VFD16X2::store_custom_char(uint8_t pos, uint8_t location, const uint8_t cols_bitmap[5]) {
   if (location > 15) {
     ESP_LOGE(TAG, "Custom character location must be between 0 and 15");
     return;
   }
+  this->enable();
+  this->write_byte(0x20 | (pos << 7));
+  this->write_byte(location);
+  for (uint8_t i = 0; i < 5; i++) {
+    this->write_byte(cols_bitmap[i]);
+  }
+  this->disable();
+}
+
+void VFD16X2::store_custom_char(uint8_t location, const uint8_t cols_bitmap[5]) {
   // For convenience we store it in both CGRAM banks. This way it can be used on both rows.
   for (uint8_t bank = 0; bank < 2; bank++) {
-    this->enable();
-    this->write_byte(0x20 | (bank << 7));
-    this->write_byte(location);
-    for (uint8_t i = 0; i < 5; i++) {
-      this->write_byte(cols_bitmap[i]);
-    }
-    this->disable();
+    this->store_custom_char(bank, location, cols_bitmap);
   }
+}
+
+void VFD16X2::print(uint8_t column, uint8_t row, uint8_t byte) {
+  if (row >= ROWS || column >= COLS) {
+    ESP_LOGE(TAG, "Position out of bounds: row %d, column %d", row, column);
+    return;
+  }
+  this->enable();
+  this->write_byte(row == 0 ? CMD_POS_ROW_0 : CMD_POS_ROW_1);
+  this->write_byte(COLS - 1 - column);
+  this->write_byte(byte);
+  this->disable();
 }
 
 void VFD16X2::print(uint8_t column, uint8_t row, const char *str) {
