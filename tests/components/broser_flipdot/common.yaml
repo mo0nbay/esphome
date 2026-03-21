@@ -1,0 +1,9 @@
+display:
+  - platform: broser_flipdot
+    i2c_id: i2c_bus
+    address: 0x03
+    id: flipdot_display
+    num_chips: 1
+    update_interval: 1s
+    lambda: |-
+      it.rectangle(0, 0, it.get_width(), it.get_height());
