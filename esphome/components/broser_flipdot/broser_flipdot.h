@@ -7,11 +7,8 @@
 namespace esphome {
 namespace broser_flipdot {
 
-/// Width of a single flip-dot module in pixels.
 static constexpr int MODULE_WIDTH = 28;
-/// Height of a single flip-dot module in pixels.
 static constexpr int MODULE_HEIGHT = 16;
-/// Bytes per module (MODULE_WIDTH * MODULE_HEIGHT / 8).
 static constexpr int MODULE_BUFFER_SIZE = MODULE_WIDTH * MODULE_HEIGHT / 8;
 
 class BroserFlipdot : public display::DisplayBuffer, public i2c::I2CDevice {
@@ -31,10 +28,10 @@ class BroserFlipdot : public display::DisplayBuffer, public i2c::I2CDevice {
   int get_width_internal() override;
   int get_height_internal() override;
 
-  /// Compute the size of the framebuffer in bytes.
   size_t get_buffer_length_();
-  /// Send the framebuffer to the flip-dot controller over I2C.
   void write_display_data_();
+
+  void send_flip_command(int x, int y, bool on);
 
   uint8_t num_chips_{1};
 };
