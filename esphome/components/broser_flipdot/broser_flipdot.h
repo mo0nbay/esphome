@@ -34,6 +34,8 @@ class BroserFlipdot : public display::DisplayBuffer, public i2c::I2CDevice {
   void send_flip_command(int x, int y, bool on);
 
   uint8_t num_chips_{1};
+
+  uint8_t *prev_buffer_{nullptr};
 };
 
 }  // namespace broser_flipdot

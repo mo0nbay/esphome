@@ -28,6 +28,14 @@ void BroserFlipdot::setup() {
   // Allocate the internal framebuffer (1 bit per pixel).
   this->init_internal_(this->get_buffer_length_());
 
+  // Allocate the previous-frame buffer for dirty-pixel tracking.
+  // Initialized to 0xff (inverted of cleared display) so the first frame
+  // forces a full refresh.
+  size_t buf_len = this->get_buffer_length_();
+  // Never freed, so direct `new` should be fine.
+  this->prev_buffer_ = new uint8_t[buf_len];  // NOLINT
+  memset(this->prev_buffer_, 0xff, buf_len);
+
   // Clear the display.
   this->fill(Color::BLACK);
   this->write_display_data_();
@@ -167,17 +175,37 @@ void BroserFlipdot::send_flip_command(int x, int y, bool on) {
 }
 
 void BroserFlipdot::write_display_data_() {
-  for (int x = 0; x < this->get_width_internal(); x++) {
-    for (int y = 0; y < this->get_height_internal(); y++) {
-      // Read buffer.
-      int module_index = x / MODULE_WIDTH;
-      int local_x = x % MODULE_WIDTH;
-      int byte_offset = module_index * MODULE_BUFFER_SIZE + local_x * (MODULE_HEIGHT / 8) + (y / 8);
-      uint8_t bit_mask = 1 << (y % 8);
-      bool is_on = (this->buffer_[byte_offset] & bit_mask) != 0;
-      this->send_flip_command(x, y, is_on);
+  size_t buf_len = this->get_buffer_length_();
+  int flipped = 0;
+
+  for (size_t i = 0; i < buf_len; i++) {
+    uint8_t diff = this->buffer_[i] ^ this->prev_buffer_[i];
+    if (diff == 0)
+      continue;
+
+    // Map byte index -> (x, y_base).
+    int module_index = i / MODULE_BUFFER_SIZE;
+    int local_offset = i % MODULE_BUFFER_SIZE;
+    int local_x = local_offset / (MODULE_HEIGHT / 8);
+    int y_byte = local_offset % (MODULE_HEIGHT / 8);
+    int x = module_index * MODULE_WIDTH + local_x;
+    int y_base = y_byte * 8;
+
+    // Flip only the bits that changed.
+    for (int bit = 0; bit < 8; bit++) {
+      if (!(diff & (1 << bit)))
+        continue;
+      bool is_on = (this->buffer_[i] >> bit) & 1;
+      this->send_flip_command(x, y_base + bit, is_on);
+      flipped++;
     }
   }
+
+  // Snapshot current frame as the new baseline.
+  // Note that we could probably do a pointer swap here instead of memcpy, but that requires some introspection into the
+  // Display base class.
+  memcpy(this->prev_buffer_, this->buffer_, buf_len);
+  ESP_LOGD(TAG, "Flipped %d pixels", flipped);
 }
 
 }  // namespace broser_flipdot
