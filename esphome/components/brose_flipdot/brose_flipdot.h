@@ -5,13 +5,13 @@
 #include "esphome/core/component.h"
 
 namespace esphome {
-namespace broser_flipdot {
+namespace brose_flipdot {
 
 static constexpr int MODULE_WIDTH = 28;
 static constexpr int MODULE_HEIGHT = 16;
 static constexpr int MODULE_BUFFER_SIZE = MODULE_WIDTH * MODULE_HEIGHT / 8;
 
-class BroserFlipdot : public display::DisplayBuffer, public i2c::I2CDevice {
+class BroseFlipdot : public display::DisplayBuffer, public i2c::I2CDevice {
  public:
   void setup() override;
   void update() override;
@@ -38,5 +38,5 @@ class BroserFlipdot : public display::DisplayBuffer, public i2c::I2CDevice {
   uint8_t *prev_buffer_{nullptr};
 };
 
-}  // namespace broser_flipdot
+}  // namespace brose_flipdot
 }  // namespace esphome

@@ -1,5 +1,5 @@
 display:
-  - platform: broser_flipdot
+  - platform: brose_flipdot
     i2c_id: i2c_bus
     address: 0x03
     id: flipdot_display

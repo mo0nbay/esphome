@@ -1,12 +1,12 @@
-#include "broser_flipdot.h"
+#include "brose_flipdot.h"
 #include "esphome/core/log.h"
 #include "esphome/core/defines.h"
 #include "esphome/core/helpers.h"
 
 namespace esphome {
-namespace broser_flipdot {
+namespace brose_flipdot {
 
-static const char *const TAG = "broser_flipdot";
+static const char *const TAG = "brose_flipdot";
 
 constexpr uint8_t kI2CAddrMod = 0x20;
 constexpr uint8_t kI2CAddrCol = 0x21;
@@ -14,8 +14,8 @@ constexpr uint8_t kI2CAddrRow = 0x22;
 
 constexpr int kFlipTimeUs = 550;
 
-void BroserFlipdot::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up Broser Flip-Dot display...");
+void BroseFlipdot::setup() {
+  ESP_LOGCONFIG(TAG, "Setting up Brose Flip-Dot display...");
 
   // Probe the I2C device.
   auto err = this->write(nullptr, 0);
@@ -41,15 +41,15 @@ void BroserFlipdot::setup() {
   this->write_display_data_();
 }
 
-void BroserFlipdot::update() {
+void BroseFlipdot::update() {
   // Let ESPHome's display engine draw into the buffer (lambda / pages).
   this->do_update_();
   // Push the buffer to the hardware.
   this->write_display_data_();
 }
 
-void BroserFlipdot::dump_config() {
-  ESP_LOGCONFIG(TAG, "Broser Flip-Dot:");
+void BroseFlipdot::dump_config() {
+  ESP_LOGCONFIG(TAG, "Brose Flip-Dot:");
   ESP_LOGCONFIG(TAG, "  Num chips: %u", this->num_chips_);
   ESP_LOGCONFIG(TAG, "  Width: %dpx", this->get_width_internal());
   ESP_LOGCONFIG(TAG, "  Height: %dpx", this->get_height_internal());
@@ -57,7 +57,7 @@ void BroserFlipdot::dump_config() {
   LOG_UPDATE_INTERVAL(this);
 }
 
-void HOT BroserFlipdot::draw_absolute_pixel_internal(int x, int y, Color color) {
+void HOT BroseFlipdot::draw_absolute_pixel_internal(int x, int y, Color color) {
   if (x < 0 || x >= this->get_width_internal() || y < 0 || y >= this->get_height_internal())
     return;
 
@@ -78,11 +78,11 @@ void HOT BroserFlipdot::draw_absolute_pixel_internal(int x, int y, Color color) 
   }
 }
 
-int BroserFlipdot::get_width_internal() { return MODULE_WIDTH * this->num_chips_; }
+int BroseFlipdot::get_width_internal() { return MODULE_WIDTH * this->num_chips_; }
 
-int BroserFlipdot::get_height_internal() { return MODULE_HEIGHT; }
+int BroseFlipdot::get_height_internal() { return MODULE_HEIGHT; }
 
-size_t BroserFlipdot::get_buffer_length_() { return static_cast<size_t>(this->num_chips_) * MODULE_BUFFER_SIZE; }
+size_t BroseFlipdot::get_buffer_length_() { return static_cast<size_t>(this->num_chips_) * MODULE_BUFFER_SIZE; }
 
 struct FlipCommands {
   uint8_t col;
@@ -138,7 +138,7 @@ void compute_flip_commands(int x, int y, bool on_off, FlipCommands &cmds) {
              | (y >= 14) << 7;          // ROW_14-27_EN.
 }
 
-void BroserFlipdot::send_flip_command(int x, int y, bool on) {
+void BroseFlipdot::send_flip_command(int x, int y, bool on) {
   if (x < 0 || x >= MODULE_WIDTH * this->num_chips_ || y < 0 || y >= MODULE_HEIGHT) {
     ESP_LOGE(TAG, "Invalid coordinates for flip command: (%d, %d)", x, y);
     return;
@@ -174,7 +174,7 @@ void BroserFlipdot::send_flip_command(int x, int y, bool on) {
   this->write(&row_disable_cmd, 1);
 }
 
-void BroserFlipdot::write_display_data_() {
+void BroseFlipdot::write_display_data_() {
   size_t buf_len = this->get_buffer_length_();
   int flipped = 0;
 
@@ -208,5 +208,5 @@ void BroserFlipdot::write_display_data_() {
   ESP_LOGD(TAG, "Flipped %d pixels", flipped);
 }
 
-}  // namespace broser_flipdot
+}  // namespace brose_flipdot
 }  // namespace esphome

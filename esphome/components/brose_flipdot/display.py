@@ -5,15 +5,15 @@ from esphome.const import CONF_ID, CONF_LAMBDA, CONF_NUM_CHIPS, CONF_PAGES
 
 DEPENDENCIES = ["i2c"]
 
-broser_flipdot_ns = cg.esphome_ns.namespace("broser_flipdot")
-BroserFlipdot = broser_flipdot_ns.class_(
-    "BroserFlipdot", cg.PollingComponent, display.DisplayBuffer, i2c.I2CDevice
+brose_flipdot_ns = cg.esphome_ns.namespace("brose_flipdot")
+BroseFlipdot = brose_flipdot_ns.class_(
+    "BroseFlipdot", cg.PollingComponent, display.DisplayBuffer, i2c.I2CDevice
 )
 
 CONFIG_SCHEMA = cv.All(
     display.FULL_DISPLAY_SCHEMA.extend(
         {
-            cv.GenerateID(): cv.declare_id(BroserFlipdot),
+            cv.GenerateID(): cv.declare_id(BroseFlipdot),
             cv.Optional(CONF_NUM_CHIPS, default=1): cv.int_range(min=1, max=8),
         }
     )
