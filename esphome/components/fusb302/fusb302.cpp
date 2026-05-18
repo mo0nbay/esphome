@@ -140,7 +140,7 @@ void FUSB302::start_power_negotiation() {
   }
 
   uint8_t device_id;
-  if (this->read_register(REG_DEVICE_ID, (uint8_t *) &device_id, 1) != ERROR_OK) {
+  if (this->read_register(REG_DEVICE_ID, (uint8_t *) &device_id, 1)) {
     FUSB302_FAIL("Failed to read device id");
     return;
   }
@@ -259,8 +259,8 @@ bool FUSB302::has_fifo_msg() {
   // Read all interrupt registers in one go. This will also clear the interrupt.
   uint8_t buf[7];
   i2c::ErrorCode err;
-  if ((err = this->read_register(REG_STATUS0A, (uint8_t *) &buf, sizeof(buf), true))) {
-    ESP_LOGE(TAG, "Failed to read reg. Error: %d", err);
+  if ((err = this->read_register(REG_STATUS0A, (uint8_t *) &buf, sizeof(buf)))) {
+    ESP_LOGE(TAG, "Failed to read register. Error: %d", err);
     return false;
   }
 
