@@ -140,7 +140,7 @@ void FUSB302::start_power_negotiation() {
   }
 
   uint8_t device_id;
-  if (this->read_register(REG_DEVICE_ID, (uint8_t *) &device_id, 1, false)) {
+  if (this->read_register(REG_DEVICE_ID, (uint8_t *) &device_id, 1) != ERROR_OK) {
     FUSB302_FAIL("Failed to read device id");
     return;
   }
