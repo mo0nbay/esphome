@@ -110,7 +110,7 @@ async def to_code(config):
 
 
 @automation.register_action(
-    "fusb302.start_power_negotiation", StartPowerNegotiationAction, ACTION_SCHEMA
+    "fusb302.start_power_negotiation", StartPowerNegotiationAction, ACTION_SCHEMA, synchronous=True
 )
 async def fusb302_start_power_negotiation_to_code(
     config, action_id, template_arg, args
@@ -127,7 +127,7 @@ async def fusb302_start_power_negotiation_to_code(
             cv.Required(CONF_ID): cv.use_id(FUSB302),
             cv.Required(CONF_VOLTAGE): cv.templatable(cv.voltage),
         }
-    ),
+    ), synchronous=True,
 )
 async def fusb302_set_voltage_requirement_to_code(
     config, action_id, template_arg, args
